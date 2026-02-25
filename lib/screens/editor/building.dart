@@ -1,6 +1,7 @@
 // Copyright 2022-2025 Ilya Zverev
 // This file is a part of Every Door, distributed under GPL v3 or later version.
 // Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
+import 'package:country_coder/country_coder.dart';
 import 'package:adaptive_dialog/adaptive_dialog.dart';
 import 'package:every_door/helpers/geometry/equirectangular.dart';
 import 'package:every_door/helpers/in_countries.dart';
@@ -55,7 +56,7 @@ class _BuildingEditorPaneState extends ConsumerState<BuildingEditorPane> {
     isJapan = CountryCoder.instance.isIn(
       lat: widget.location.latitude,
       lon: widget.location.longitude,
-      inside: 'Q17',
+      inside: 'Q17', //Japan
     );
     saved = false;
     updateLevels();
