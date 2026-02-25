@@ -117,7 +117,12 @@ class _AddressBlockBasedInputState extends ConsumerState<AddressBlockBasedInput>
       base: widget.field.key,
     );
 
-    final options = nearestAddresses.map((e) => e.toString()).toList();
+    final List<String> options =
+        nearestAddresses.map((e) => e.toShortString()).toList();
+    final String? currentValue = current.isEmpty ? null : current.toShortString();
+    if (currentValue != null && !options.contains(currentValue)) {
+      options.insert(0, currentValue);
+    }
 
     if (current.isEmpty) {
       options.insert(0, kChooseOnMap);
@@ -128,7 +133,7 @@ class _AddressBlockBasedInputState extends ConsumerState<AddressBlockBasedInput>
 
     return RadioField(
       options: options,
-      value: current.isEmpty ? null : current.toString(),
+      value: currentValue,
       keepFirst: true,
       onChange: (value) async {
         if (value == null) {
@@ -140,12 +145,13 @@ class _AddressBlockBasedInputState extends ConsumerState<AddressBlockBasedInput>
         } else if (value == kChooseOnMap) {
           await _chooseAddressOnMap();
         } else {
-          final idx = options.indexOf(value);
-          if (idx >= 0 && idx < nearestAddresses.length) {
+          final ba = nearestAddresses.cast<BlockBasedAddress?>().firstWhere(
+                (e) => e?.toShortString() == value,
+                orElse: () => value == currentValue ? current : null,
+              );
+          if (ba != null) {
             setState(() {
-              nearestAddresses[idx]
-                  .withBase(widget.field.key)
-                  .setTags(widget.element);
+              ba.withBase(widget.field.key).setTags(widget.element);
             });
           }
         }

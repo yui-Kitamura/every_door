@@ -3,7 +3,9 @@ import 'package:country_coder/country_coder.dart';
 import 'package:every_door/helpers/geometry/equirectangular.dart';
 import 'package:every_door/helpers/in_countries.dart';
 import 'package:every_door/models/address.dart';
+import 'package:every_door/models/address_blockbased.dart';
 import 'package:every_door/widgets/address_form.dart';
+import 'package:every_door/widgets/address_form_blockbased.dart';
 import 'package:every_door/widgets/radio_field.dart';
 import 'package:every_door/models/amenity.dart';
 import 'package:every_door/providers/changes.dart';
@@ -31,6 +33,7 @@ class _BuildingEditorPaneState extends ConsumerState<BuildingEditorPane> {
   late final OsmChange building;
   bool manualLevels = false;
   bool buildingsNeedAddresses = true;
+  bool isJapan = false;
   bool saved = false;
   late final FocusNode _levelsFocus;
   List<String> nearestLevels = [];
@@ -44,6 +47,11 @@ class _BuildingEditorPaneState extends ConsumerState<BuildingEditorPane> {
     buildingsHaveAddresses(widget.location).then((value) {
       buildingsNeedAddresses = value;
     });
+    isJapan = CountryCoder.instance.isIn(
+      lat: widget.location.latitude,
+      lon: widget.location.longitude,
+      inside: 'Q17',
+    );
     saved = false;
     updateLevels();
   }
@@ -149,7 +157,18 @@ class _BuildingEditorPaneState extends ConsumerState<BuildingEditorPane> {
             ),
             child: Column(
               children: [
-                if (buildingsNeedAddresses || isAddress)
+                if (isJapan)
+                  AddressFormBlockBased(
+                    location: widget.location,
+                    initialAddress:
+                        BlockBasedAddress.fromTags(building.getFullTags()),
+                    autoFocus:
+                        building['addr:housenumber'] == null && !manualLevels,
+                    onChange: (addr) {
+                      addr.forceTags(building);
+                    },
+                  )
+                else if (buildingsNeedAddresses || isAddress)
                   AddressForm(
                     location: widget.location,
                     initialAddress:

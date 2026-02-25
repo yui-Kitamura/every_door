@@ -1,7 +1,5 @@
 import 'package:country_coder/country_coder.dart';
 import 'package:every_door/constants.dart';
-import 'package:every_door/fields/address_form.dart';
-import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
 import 'package:every_door/providers/editor_settings.dart';
 import 'package:every_door/widgets/radio_field.dart';
 import 'package:every_door/providers/osm_data.dart';
@@ -9,16 +7,30 @@ import 'package:flutter/material.dart';
 import 'package:every_door/models/address_blockbased.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:every_door/generated/l10n/app_localizations.dart'
+    show AppLocalizations;
+import 'package:latlong2/latlong.dart' show LatLng;
 
-class AddressFormBlockBasedField extends AddressFormField {
-  
-  const AddressFormBlockBasedField(super.field, super.element);
+class AddressFormBlockBased extends ConsumerStatefulWidget {
+  final LatLng location;
+  final BlockBasedAddress? initialAddress;
+  final Function(BlockBasedAddress) onChange;
+  final double columnWidth;
+  final bool autoFocus;
+
+  const AddressFormBlockBased({
+    this.initialAddress,
+    required this.location,
+    required this.onChange,
+    this.columnWidth = 100.0,
+    this.autoFocus = true,
+  });
 
   @override
-  ConsumerState<AddressFormBlockBasedField> createState() => _AddressFormFieldBlockBasedState();
+  ConsumerState<AddressFormBlockBased> createState() => _AddressFormBlockBasedState();
 }
 
-class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBasedField> {
+class _AddressFormBlockBasedState extends ConsumerState<AddressFormBlockBased> {
   late final TextEditingController _provinceController;
   late final TextEditingController _cityController;
   late final TextEditingController _neighController;
@@ -36,7 +48,7 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
   @override
   void initState() {
     super.initState();
-    final address = BlockBasedAddress.fromTags(widget.element.getFullTags());
+    final address = widget.initialAddress ?? BlockBasedAddress();
     _provinceController = TextEditingController(text: address.province);
     _cityController = TextEditingController(text: address.city);
     _neighController = TextEditingController(text: address.neighbourhood);
@@ -60,7 +72,6 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
     _countyController.dispose();
     _suburbController.dispose();
     _quarterController.dispose();
-
     super.dispose();
   }
 
@@ -74,7 +85,7 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
   Future<void> _updateNearbyAddressHints() async {
     final provider = ref.read(osmDataProvider);
     final addrs = await provider.getBlockBasedAddressesAround(
-      widget.element.location,
+      widget.location,
       limit: 30,
     );
     setState(() {
@@ -91,40 +102,8 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
     return value.isEmpty ? null : value;
   }
 
-  void notifyOnChange() {
-    String postcode = _postcodeController.text.trim();
-    final isJapan = CountryCoder.instance.isIn(
-      lat: widget.element.location.latitude,
-      lon: widget.element.location.longitude,
-      inside: 'Q17',
-    );
-
-    if (isJapan && postcode.length == 7 && !postcode.contains('-')) {
-      postcode = postcode.substring(0, 3) + '-' + postcode.substring(3);
-      _postcodeController.value = TextEditingValue(
-        text: postcode,
-        selection: TextSelection.collapsed(offset: postcode.length),
-      );
-    }
-
-    final address = BlockBasedAddress(
-      province: _getValue(_provinceController),
-      city: _getValue(_cityController),
-      neighbourhood: _getValue(_neighController),
-      blockNumber: _getValue(_blockController),
-      housenumber: _getValue(_houseController),
-      postcode: _getValue(_postcodeController),
-      county: _getValue(_countyController),
-      suburb: _getValue(_suburbController),
-      quarter: _getValue(_quarterController),
-    );
-    address.forceTags(widget.element);
-    setState(() {});
-  }
-
   Future<void> _editValue(String label, TextEditingController controller,
-      {TextInputType? keyboardType,
-      List<TextInputFormatter>? inputFormatters}) async {
+      {TextInputType? keyboardType, List<TextInputFormatter>? inputFormatters}) async {
     final result = await showDialog<String>(
       context: context,
       builder: (context) {
@@ -158,6 +137,37 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
     }
   }
 
+  void notifyOnChange() {
+    String postcode = _postcodeController.text.trim();
+    final isJapan = CountryCoder.instance.isIn(
+      lat: widget.location.latitude,
+      lon: widget.location.longitude,
+      inside: 'Q17', // Japan
+    );
+
+    if (isJapan && postcode.length == 7 && !postcode.contains('-')) {
+      postcode = postcode.substring(0, 3) + '-' + postcode.substring(3);
+      _postcodeController.value = TextEditingValue(
+        text: postcode,
+        selection: TextSelection.collapsed(offset: postcode.length),
+      );
+    }
+
+    final address = BlockBasedAddress(
+      province: _getValue(_provinceController),
+      city: _getValue(_cityController),
+      neighbourhood: _getValue(_neighController),
+      blockNumber: _getValue(_blockController),
+      housenumber: _getValue(_houseController),
+      postcode: _getValue(_postcodeController),
+      county: _getValue(_countyController),
+      suburb: _getValue(_suburbController),
+      quarter: _getValue(_quarterController),
+    );
+    widget.onChange(address);
+    setState(() {});
+  }
+
   TableRow _buildRow(String label, TextEditingController controller,
       {TextInputType? keyboardType,
       String? hintText,
@@ -167,51 +177,49 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
       List<TextInputFormatter>? inputFormatters,
       List<String>? options}) {
     final hasOptions = options != null && options.isNotEmpty;
+    final displayOptions = hasOptions ? options + [kManualOption] : null;
 
     return TableRow(
       children: [
         Padding(
-          padding: const EdgeInsets.only(right: 10.0, top: 15.0),
+          padding: const EdgeInsets.only(right: 10.0, top: 10.0),
           child: Text(label, style: kFieldTextStyle.copyWith(color: labelColor)),
         ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (hasOptions)
-              Row(
-                children: [
-                  Expanded(
-                    child: RadioField(
-                      options: options,
-                      value: options.contains(controller.text.trim()) ? controller.text.trim() : null,
-                      onChange: (value) {
-                        if (value != null) {
-                          controller.text = value;
-                          notifyOnChange();
-                        }
-                      },
-                    ),
-                  ),
-                  IconButton(
-                    icon: Text(kManualOption, style: TextStyle(fontSize: 20.0)),
-                    onPressed: () => _editValue(label, controller,
-                        keyboardType: keyboardType,
-                        inputFormatters: inputFormatters),
-                  ),
-                ],
-              ),
-            if (!hasOptions)
-              TextFormField(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (hasOptions)
+                RadioField(
+                  options: displayOptions!,
+                  value: options.contains(controller.text.trim()) ? controller.text.trim() : null,
+                  onChange: (value) {
+                    if (value == kManualOption) {
+                      _editValue(label, controller,
+                          keyboardType: keyboardType, inputFormatters: inputFormatters);
+                    } else if (value != null) {
+                      controller.text = value;
+                      notifyOnChange();
+                    }
+                  },
+                ),
+              if (!hasOptions)
+                TextFormField(
                 controller: controller,
                 keyboardType: keyboardType,
                 autofocus: autofocus,
                 style: kFieldTextStyle,
-                decoration: InputDecoration(hintText: hintText),
+                decoration: InputDecoration(
+                  hintText: hintText,
+                  contentPadding: EdgeInsets.symmetric(vertical: 5.0),
+                ),
                 validator: validator,
                 inputFormatters: inputFormatters,
                 onChanged: (value) => notifyOnChange(),
               ),
-          ],
+            ],
+          ),
         ),
       ],
     );
@@ -222,16 +230,23 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
     final loc = AppLocalizations.of(context)!;
     final numericKeyboardType = ref.watch(editorSettingsProvider).keyboardType;
     final isJapan = CountryCoder.instance.isIn(
-      lat: widget.element.location.latitude,
-      lon: widget.element.location.longitude,
+      lat: widget.location.latitude,
+      lon: widget.location.longitude,
       inside: 'Q17',
     );
     final postcodeRegExp = RegExp(r'^\d{3}-\d{4}$');
 
-    // Order: Postcode -> Province -> County -> City -> Suburb -> Quarter -> Neighbourhood -> Block -> House
+    // Requested order: 郵便番号 -> 市町村 -> "町丁・字" -> 番地 -> 住居番号
+    // Mapping to OSM tags:
+    // 郵便番号: postcode
+    // 市町村: city / county / province
+    // 町丁・字: neighbourhood / quarter / suburb
+    // 番地: block_number
+    // 住居番号: housenumber
+
     return Table(
-      columnWidths: const { 0: FixedColumnWidth(100.0)},
-      defaultVerticalAlignment: TableCellVerticalAlignment.top,
+      columnWidths: {0: FixedColumnWidth(widget.columnWidth)},
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
         _buildRow(loc.addressPostcode, _postcodeController,
             keyboardType: TextInputType.number,
@@ -245,17 +260,10 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
               if (isJapan && !postcodeRegExp.hasMatch(value)) return loc.addressPostcodeWrong;
               return null;
             }),
-        _buildRow(loc.addressProvince, _provinceController,
-            options: nearestProvinces.isNotEmpty ? nearestProvinces : null),
-        _buildRow(loc.addressCounty, _countyController),
-        _buildRow(loc.addressCity, _cityController,
-            options: nearestCities.isNotEmpty ? nearestCities : null),
-        _buildRow(loc.addressSuburb, _suburbController),
-        _buildRow(loc.addressQuarter, _quarterController),
-        _buildRow(loc.addressNeighbourhood, _neighController,
-            options: nearestNeighbourhoods.isNotEmpty
-                ? nearestNeighbourhoods
-                : null),
+        if (nearestProvinces.isNotEmpty)
+          _buildRow(loc.addressProvince, _provinceController, options: nearestProvinces),
+        _buildRow(loc.addressCity, _cityController, options: nearestCities),
+        _buildRow(loc.addressNeighbourhood, _neighController, options: nearestNeighbourhoods),
         _buildRow(
           loc.addressBlock,
           _blockController,
@@ -269,7 +277,7 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
           loc.addressHouseNumber,
           _houseController,
           keyboardType: TextInputType.visiblePassword,
-          autofocus: widget.field.autoFocus,
+          autofocus: widget.autoFocus,
           hintText: '1, 89, 154A, ...',
           validator: (value) => value == null || value.trim().isEmpty
               ? loc.addressHouseNotEmpty
