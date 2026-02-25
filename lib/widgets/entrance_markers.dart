@@ -1,9 +1,14 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:every_door/constants.dart';
 import 'package:every_door/helpers/multi_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+@Bind()
 class SizedMarker {
   final Widget child;
 
@@ -36,6 +41,7 @@ class SizedMarker {
   }
 }
 
+@Bind()
 class BuildingMarker extends SizedMarker {
   BuildingMarker({
     bool isComplete = false,
@@ -73,6 +79,7 @@ class BuildingMarker extends SizedMarker {
         );
 }
 
+@Bind()
 class AddressMarker extends SizedMarker {
   AddressMarker({required String label})
       : super(
@@ -107,6 +114,7 @@ class AddressMarker extends SizedMarker {
         );
 }
 
+@Bind()
 class EntranceMarker extends SizedMarker {
   EntranceMarker({bool isComplete = false})
       : super(
@@ -136,6 +144,7 @@ class EntranceMarker extends SizedMarker {
         );
 }
 
+@Bind()
 class IconMarker extends SizedMarker {
   IconMarker(MultiIcon icon)
       : super(

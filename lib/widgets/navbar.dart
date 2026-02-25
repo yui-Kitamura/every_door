@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/providers/api_status.dart';
 import 'package:every_door/providers/changes.dart';
 import 'package:every_door/providers/changeset_tags.dart';
@@ -31,10 +34,10 @@ class BrowserNavigationBar extends ConsumerWidget {
     ref.watch(editorModeProvider); // to update the widget
     final apiStatus = ref.watch(apiStatusProvider);
     final hasChangesToUpload = ref.watch(changesProvider).haveNoErrorChanges();
-    final hasNotesToUpload = ref.watch(notesProvider).haveChanges;
+    final hasNotesToUpload = ref.watch(notesProvider) > 0;
     final double bottomPadding = MediaQuery.of(context).padding.bottom;
     final bool haveHashtags =
-        ref.watch(changesetTagsProvider).getHashtags().isNotEmpty;
+        ref.watch(changesetTagsProvider.notifier).getHashtags().isNotEmpty;
     final loc = AppLocalizations.of(context)!;
 
     IconButton dataButton;
@@ -133,7 +136,7 @@ class ModeIconButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isCurrent = ref.watch(editorModeProvider) == mode;
-    final icon = mode.getIcon(context, !isCurrent);
+    final icon = mode.getIcon(context, isCurrent);
 
     return IconButton(
       icon: icon.getWidget(color: isCurrent ? Colors.yellow : Colors.white70),

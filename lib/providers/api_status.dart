@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
 
@@ -6,9 +9,11 @@ final apiStatusProvider = StateProvider<ApiStatus>((ref) => ApiStatus.idle);
 enum ApiStatus {
   idle,
   downloading,
+  downloadingPlugin,
   updatingDatabase,
   uploading,
   uploadingNotes,
+  uploadingPlugin,
 }
 
 String getApiStatusLoc(ApiStatus status, AppLocalizations loc) {
@@ -17,11 +22,15 @@ String getApiStatusLoc(ApiStatus status, AppLocalizations loc) {
       return 'Idle';
     case ApiStatus.downloading:
       return loc.apiStatusDownloading;
+    case ApiStatus.downloadingPlugin:
+      return 'Downloading plugin data'; // TODO: translate
     case ApiStatus.updatingDatabase:
       return loc.apiStatusUpdatingDB;
     case ApiStatus.uploading:
       return loc.apiStatusUploading;
     case ApiStatus.uploadingNotes:
       return loc.apiStatusUploadingNotes;
+    case ApiStatus.uploadingPlugin:
+      return 'Uploading plugin data'; // TODO: translate
   }
 }

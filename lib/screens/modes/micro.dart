@@ -1,4 +1,8 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/helpers/multi_icon.dart';
+import 'package:every_door/models/located.dart';
 import 'package:every_door/providers/editor_settings.dart';
 import 'package:every_door/screens/editor/map_chooser.dart';
 import 'package:every_door/screens/modes/definitions/micro.dart';
@@ -9,14 +13,12 @@ import 'package:every_door/widgets/map_drag_create.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:every_door/constants.dart';
-import 'package:every_door/models/amenity.dart';
 import 'package:every_door/providers/api_status.dart';
 import 'package:every_door/providers/geolocation.dart';
 import 'package:every_door/providers/location.dart';
 import 'package:every_door/providers/editor_mode.dart';
 import 'package:every_door/providers/need_update.dart';
 import 'package:every_door/providers/poi_filter.dart';
-import 'package:every_door/screens/editor.dart';
 import 'package:every_door/widgets/poi_pane.dart';
 import 'package:every_door/generated/l10n/app_localizations.dart'
     show AppLocalizations;
@@ -37,7 +39,7 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
   static const kMicromappingTapZoom = 19.0;
 
   final _controller = CustomMapController();
-  List<OsmChange>? _microPOI;
+  List<Located>? _microPOI;
   double? _savedZoom;
 
   @override
@@ -51,6 +53,14 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
   }
 
   @override
+  void didUpdateWidget(covariant MicromappingPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Resubscribe, as per this method documentation.
+    oldWidget.def.removeListener(onDefChange);
+    widget.def.addListener(onDefChange);
+  }
+
+  @override
   void dispose() {
     widget.def.removeListener(onDefChange);
     super.dispose();
@@ -60,25 +70,25 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
     if (mounted) setState(() {});
   }
 
-  Future<void> updateNearest() async {
+  Future<void> updateNearest([LatLngBounds? bounds]) async {
     // Disabling updates in zoomed in mode.
     if (ref.read(microZoomedInProvider) != null) return;
 
-    await widget.def.updateNearest();
-
-    if (mounted) {
-      widget.def.updateLegend(context);
-    }
+    bounds ??= ref.read(visibleBoundsProvider);
+    if (bounds == null) return;
+    final locale = Localizations.localeOf(context);
+    await widget.def.updateNearest(bounds);
+    widget.def.updateLegend(locale);
 
     // Zoom automatically only when tracking location.
     if (mounted && ref.read(trackingProvider)) {
-      _controller.zoomToFit(widget.def.nearestPOI.map((e) => e.location));
+      _controller.zoomToFit(widget.def.nearest.map((e) => e.location));
     }
   }
 
   Future<void> micromappingTap(
       LatLng position, double Function(LatLng) distance) async {
-    List<OsmChange> amenitiesAtCenter = widget.def.nearestPOI
+    List<Located> amenitiesAtCenter = widget.def.nearest
         .where((element) => distance(element.location) <= kTapRadius)
         .toList();
 
@@ -92,13 +102,8 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
             (a, b) => distance(a.location).compareTo(distance(b.location)));
       }
       // Open the editor for the first object.
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PoiEditorPage(amenity: amenitiesAtCenter.first),
-          fullscreenDialog: true,
-        ),
-      );
+      await widget.def
+          .openEditor(context: context, element: amenitiesAtCenter.first);
       // When finished, reset zoomed in state.
       ref.read(microZoomedInProvider.notifier).state = null;
       _microPOI = null;
@@ -108,7 +113,7 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
       ref.read(microZoomedInProvider.notifier).state = LatLngBounds.fromPoints(
           amenitiesAtCenter.map((a) => a.location).toList());
       // Disable tracking.
-      ref.read(trackingProvider.notifier).state = false;
+      ref.read(trackingProvider.notifier).disable();
       // updateNearest(forceLocation: area.center);
       setState(() {
         _microPOI = amenitiesAtCenter;
@@ -120,7 +125,7 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
   Widget build(BuildContext context) {
     final isZoomedIn =
         ref.watch(microZoomedInProvider) != null && _microPOI != null;
-    final poi = isZoomedIn ? _microPOI ?? const [] : widget.def.nearestPOI;
+    final poi = isZoomedIn ? _microPOI ?? const [] : widget.def.nearest;
 
     final apiStatus = ref.watch(apiStatusProvider);
     final leftHand = ref.watch(editorSettingsProvider).leftHand;
@@ -135,8 +140,8 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
     ref.listen(poiFilterProvider, (_, next) {
       updateNearest();
     });
-    ref.listen(effectiveLocationProvider, (_, LatLng next) {
-      updateNearest();
+    ref.listen(visibleBoundsProvider, (_, next) {
+      updateNearest(next);
     });
     ref.listen<LatLngBounds?>(microZoomedInProvider, (_, next) {
       // Only update when returning from the mode.
@@ -177,7 +182,14 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
         left: false,
         right: false,
         top: isWide,
-        child: PoiPane(_microPOI ?? const []),
+        child: PoiPane(
+          amenities: _microPOI ?? const [],
+          describer: widget.def.describer,
+          onTap: (amenity) {
+            ref.read(microZoomedInProvider.notifier).state = null;
+            widget.def.openEditor(context: context, element: amenity);
+          },
+        ),
       );
       final mediaHeight = MediaQuery.of(context).size.height;
       if (isWide || mediaHeight <= 600)
@@ -218,19 +230,10 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
                 controller: _controller,
                 onTap: micromappingTap,
                 updateState: true,
-                hasFloatingButton: widget.def.nearestPOI.isEmpty && !isWide,
+                hasFloatingButton: widget.def.nearest.isEmpty && !isWide,
                 layers: [
+                  ...widget.def.overlays.map((i) => i.buildLayer()),
                   ...widget.def.mapLayers(),
-                  CircleLayer(
-                    circles: [
-                      for (final objLocation in widget.def.otherPOI)
-                        CircleMarker(
-                          point: objLocation,
-                          color: Colors.black.withValues(alpha: 0.4),
-                          radius: 2.0,
-                        ),
-                    ],
-                  ),
                   MarkerLayer(
                     markers: [
                       for (var i = poi.length - 1; i >= 0; i--)
@@ -242,6 +245,7 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
                     ],
                   ),
                 ],
+                buttons: widget.def.buttons.toList(),
               ),
             ),
             isWide
@@ -259,7 +263,7 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
           alignment: leftHand ? Alignment.bottomLeft : Alignment.bottomRight,
           onDragEnd: (pos) {
             ref.read(microZoomedInProvider.notifier).state = null;
-            widget.def.openEditor(context, pos);
+            widget.def.openEditor(context: context, location: pos);
           },
           onTap: () async {
             ref.read(microZoomedInProvider.notifier).state = null;
@@ -271,7 +275,7 @@ class _MicromappingPageState extends ConsumerState<MicromappingPane> {
               ),
             );
             if (context.mounted && location != null) {
-              widget.def.openEditor(context, location);
+              widget.def.openEditor(context: context, location: location);
             }
           },
         ),

@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/providers/compass.dart';
 import 'package:every_door/providers/geolocation.dart';
 import 'package:flutter/material.dart';
@@ -19,14 +22,16 @@ class LocationMarkerWidget extends ConsumerWidget {
 
     final CompassData? compass = ref.watch(compassProvider);
     return MobileLayerTransformer(
-      child: CustomPaint(
-        painter: _LocationMarkerPainter(
-          border: ref.watch(trackingProvider),
-          offset: MapCamera.of(context).getOffsetFromOrigin(trackLocation),
-          heading: compass?.heading,
+      child: IgnorePointer(
+        child: CustomPaint(
+          painter: _LocationMarkerPainter(
+            border: ref.watch(trackingProvider),
+            offset: MapCamera.of(context).getOffsetFromOrigin(trackLocation),
+            heading: compass?.heading,
+          ),
+          // TODO: check that it's still painted
+          // size: Size(constraints.maxWidth, constraints.maxHeight),
         ),
-        // TODO: check that it's still painted
-        // size: Size(constraints.maxWidth, constraints.maxHeight),
       ),
     );
   }

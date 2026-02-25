@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:adaptive_dialog/adaptive_dialog.dart';
 import 'package:every_door/constants.dart';
 import 'package:every_door/helpers/tags/element_kind.dart';
@@ -14,7 +17,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:every_door/models/amenity.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
-import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
+import 'package:every_door/generated/l10n/app_localizations.dart'
+    show AppLocalizations;
 
 class BottomEditorPane extends ConsumerStatefulWidget {
   final OsmChange? element;
@@ -56,7 +60,8 @@ class _BottomEditorPaneState extends ConsumerState<BottomEditorPane> {
       final tags =
           ref.read(lastPresetsProvider).getTagsForPreset(widget.preset!) ??
               widget.preset!.addTags;
-      element = OsmChange.create(tags: tags, location: widget.location!);
+      element = OsmChange.create(
+          tags: tags, location: widget.location!, source: 'osm');
     }
     element.addListener(onAmenityChange);
 
@@ -114,7 +119,7 @@ class _BottomEditorPaneState extends ConsumerState<BottomEditorPane> {
       if (element.isNew) {
         changes.deleteChange(element);
       } else {
-        element.deleted = true;
+        element.isDeleted = true;
         changes.saveChange(element);
       }
       saved = true;

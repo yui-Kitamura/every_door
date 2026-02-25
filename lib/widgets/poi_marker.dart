@@ -1,5 +1,10 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:flutter/material.dart';
 
+@Bind()
 class NumberedMarker extends StatelessWidget {
   final int? index;
   final Color color;
@@ -37,6 +42,7 @@ class NumberedMarker extends StatelessWidget {
   }
 }
 
+@Bind()
 class ColoredMarker extends StatelessWidget {
   final Color color;
   final bool isIncomplete;

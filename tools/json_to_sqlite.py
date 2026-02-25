@@ -116,7 +116,8 @@ def open_or_download(git_path: Optional[str], filename: str, from_nsi: bool = Fa
         # Download file
         RAW_GITHUB = 'https://raw.githubusercontent.com/'
         if from_nsi:
-            BASE_URL = RAW_GITHUB + 'osmlab/name-suggestion-index/main/dist/'
+            # BASE_URL = RAW_GITHUB + 'osmlab/name-suggestion-index/main/dist/'
+            BASE_URL = 'https://cdn.jsdelivr.net/npm/name-suggestion-index@latest/dist/json/'
         else:
             BASE_URL = RAW_GITHUB + 'openstreetmap/id-tagging-schema/main/dist/'
         resp = requests.get(BASE_URL + filename)
@@ -161,12 +162,20 @@ def import_fields(cur, path: Optional[str]):
         bad_types = set([
             'access', 'cycleway',
             'wikidata', 'wikipedia', 'restrictions', 'structureRadio',
-            'networkCombo', 'onewayCheck', 'manyCombo', 'directionalCombo',
+            'networkCombo', 'onewayCheck', 'directionalCombo',
         ])
         for name, row in data.items():
             # Some field types we just do not edit, or have different dedicated editing fields.
-            if 'key' not in row or row['type'] in bad_types:
+            if row['type'] in bad_types:
                 continue
+
+            if 'key' in row:
+                key = row['key']
+            elif 'keys' in row:
+                key = '\\'.join(row['keys'])
+            else:
+                continue
+
             # That rules out natural features (e.g. forests), but not buildings.
             if 'geometry' in row and 'point' not in row['geometry']:
                 continue
@@ -187,7 +196,7 @@ def import_fields(cur, path: Optional[str]):
 
             yield (
                 name,
-                row['key'],
+                key,
                 row['type'],
                 flabel,
                 fplace,

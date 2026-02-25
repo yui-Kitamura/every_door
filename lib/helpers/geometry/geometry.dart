@@ -1,20 +1,27 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:math' show sqrt, pow;
 
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:every_door/helpers/geometry/equirectangular.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:flutter_map/flutter_map.dart' show LatLngBounds;
 
+@Bind()
 class GeometryException implements Exception {
   final String message;
 
   const GeometryException(this.message);
 }
 
+@Bind()
 abstract class Geometry {
   LatLngBounds get bounds;
   LatLng get center;
 }
 
+@Bind()
 class Polygon extends Geometry {
   final List<LatLng> _nodes;
 
@@ -109,6 +116,7 @@ class Polygon extends Geometry {
   String toString() => 'Polygon($_nodes)';
 }
 
+@Bind()
 class Envelope implements Polygon {
   final LatLngBounds _bounds;
 
@@ -142,6 +150,7 @@ class Envelope implements Polygon {
   String toString() => 'Envelope(${_bounds.southWest}, ${_bounds.northEast})';
 }
 
+@Bind()
 class MultiPolygon implements Polygon {
   final List<Polygon> outer = [];
   final List<Polygon> inner = [];
@@ -192,6 +201,7 @@ class MultiPolygon implements Polygon {
       'MultiPolygon(${outer.length} outer, ${inner.length} inner)';
 }
 
+@Bind()
 class LineString extends Geometry {
   final List<LatLng> nodes;
   LatLngBounds? _cachedBounds;

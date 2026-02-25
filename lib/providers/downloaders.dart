@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/constants.dart';
 import 'package:every_door/helpers/tile_caches.dart';
 import 'package:every_door/helpers/tile_calculator.dart';
@@ -98,7 +101,7 @@ class OsmDataDownloadNotifier extends Notifier<DownloadingState> {
     _needStop = false;
     state = DownloadingState(total: boundsList.length);
     final dataProvider = ref.read(osmDataProvider);
-    final noteProvider = ref.read(notesProvider);
+    final noteProvider = ref.read(notesProvider.notifier);
     int count = 0;
     try {
       for (final bounds in boundsList) {

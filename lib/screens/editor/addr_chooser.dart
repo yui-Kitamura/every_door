@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/constants.dart';
 import 'package:every_door/providers/cur_imagery.dart';
 import 'package:every_door/providers/overlays.dart';
@@ -10,7 +13,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
+import 'package:every_door/generated/l10n/app_localizations.dart'
+    show AppLocalizations;
 
 class AddrChooserPage extends ConsumerStatefulWidget {
   final LatLng location;
@@ -80,7 +84,9 @@ class _AddrChooserPageState extends ConsumerState<AddrChooserPage> {
         ),
         children: [
           imagery.buildLayer(reset: true),
-          ...ref.watch(overlayImageryProvider),
+          ...ref
+              .watch(overlayImageryProvider)
+              .map((i) => i.buildLayer(reset: true)),
           AttributionWidget(imagery),
           MarkerLayer(
             markers: [

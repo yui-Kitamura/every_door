@@ -1,3 +1,7 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
+import 'package:every_door/helpers/multi_icon.dart';
 import 'package:every_door/widgets/map_button.dart';
 import 'package:flutter/material.dart';
 import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
@@ -24,38 +28,24 @@ class ZoomButtonsWidget extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             MapButton(
-              icon: Icons.add,
+              icon: MultiIcon(fontIcon: Icons.add),
               tooltip: loc.mapZoomIn,
-              onPressed: () {
+              onPressed: (_) {
                 controller.move(
                   controller.camera.center,
                   controller.camera.zoom + 1,
                 );
               },
             ),
-            Tooltip(
-              message: loc.mapZoomOut,
-              child: OutlinedButton(
-                onPressed: () {
-                  controller.move(
-                    controller.camera.center,
-                    controller.camera.zoom - 1,
-                  );
-                },
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Icon(
-                    Icons.remove,
-                    size: 30.0,
-                    color: Colors.black.withValues(alpha: 0.5),
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: Colors.white.withValues(alpha: 0.5),
-                  shape: CircleBorder(side: BorderSide()),
-                  padding: EdgeInsets.zero,
-                ),
-              ),
+            MapButton(
+              icon: MultiIcon(fontIcon: Icons.remove),
+              tooltip: loc.mapZoomOut,
+              onPressed: (_) {
+                controller.move(
+                  controller.camera.center,
+                  controller.camera.zoom - 1,
+                );
+              },
             ),
           ],
         ),

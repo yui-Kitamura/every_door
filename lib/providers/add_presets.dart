@@ -1,6 +1,10 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/fields/combo.dart';
 import 'package:every_door/helpers/multi_icon.dart';
 import 'package:every_door/helpers/normalizer.dart';
+import 'package:every_door/helpers/plugin_context_list.dart';
 import 'package:every_door/helpers/plugin_i18n.dart';
 import 'package:every_door/models/field.dart';
 import 'package:every_door/models/plugin.dart';
@@ -11,7 +15,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:trie_search/trie.dart';
 
+/// Manages plugin-installed field and preset definitions.
 final pluginPresetsProvider = Provider((ref) => PluginPresetsProvider(ref));
+
+typedef FieldBuilder = PresetField Function(Map<String, dynamic> data);
 
 class PluginPresetsProvider {
   static final _logger = Logger('PluginPresetsProvider');
@@ -22,6 +29,9 @@ class PluginPresetsProvider {
   final Map<String, PresetField> _fieldsCache = {};
   final Map<String, FieldTemplate> _fields = {};
   final Map<String, Map<String, String?>> _presetTags = {};
+  final Map<String, (Plugin, FieldBuilder)> _fieldBuilders = {};
+  final PluginContextMap<String, PresetField> _presetFields =
+      PluginContextMap({});
 
   PluginPresetsProvider(this._ref);
 
@@ -30,10 +40,25 @@ class PluginPresetsProvider {
     _presets.clear();
     _fieldsCache.clear();
     _fields.clear();
+    _fieldBuilders.clear();
+    _presetFields.clear();
   }
 
   void addPreset(String key, Map<String, dynamic> data, Plugin plugin,
       PluginLocalizationsBranch loc) {
+    MapEntry<String, String?> parseTagValue(String key, dynamic raw) {
+      String? value;
+      if (raw == null)
+        value = null;
+      else if (raw is String)
+        value = raw == '*' ? null : raw;
+      else if (raw is bool)
+        value = raw ? 'yes' : 'no';
+      else
+        value = raw.toString();
+      return MapEntry(key, value);
+    }
+
     final id =
         key; // '$key-${plugin.id}' does not work, since referenced in plugins
     if (!data.containsKey('name'))
@@ -42,17 +67,15 @@ class PluginPresetsProvider {
       throw Exception('Preset $key should have tags listed');
 
     final String name = data['name'];
-    final Map<String, String?> tags = (data['tags'] as Map<String, dynamic>)
-        .map((k, v) => MapEntry(k, v.toString()))
-        .map((k, v) => MapEntry(k, v == '*' ? null : v));
+    final Map<String, String?> tags =
+        (data['tags'] as Map<String, dynamic>).map(parseTagValue);
     final Map<String, String> addTags =
         ((data['addTags'] ?? data['tags']) as Map<String, dynamic>)
-            .map((k, v) => MapEntry(k, v.toString()));
+            .map(parseTagValue)
+            .cast();
     addTags.removeWhere((k, v) => v == '*');
     final Map<String, String?>? removeTags =
-        (data['removeTags'] as Map<String, dynamic>?)
-            ?.map((k, v) => MapEntry(k, v.toString()))
-            .map((k, v) => MapEntry(k, v == '*' ? null : v));
+        (data['removeTags'] as Map<String, dynamic>?)?.map(parseTagValue);
     final onArea = (data['area'] as bool?) ?? true;
     final noStandard = (data['standard'] as bool?) == false;
 
@@ -115,16 +138,36 @@ class PluginPresetsProvider {
     _fieldsCache.remove(id);
   }
 
-  void removeField(String id) {
-    _fieldsCache.remove(id);
-    _fields.remove(id);
+  void registerFieldType(String fieldType, Plugin plugin, FieldBuilder build) {
+    _fieldBuilders[fieldType] = (plugin, build);
+  }
+
+  void registerPresetField(String fieldId, Plugin plugin, PresetField field) {
+    _presetFields.set(plugin.id, fieldId, field);
+  }
+
+  void removeFieldsForPlugin(String pluginId) {
+    final fieldIds = _fields.entries
+        .where((f) => f.value.pluginId == pluginId)
+        .map((e) => e.key);
+    _fieldBuilders.removeWhere((k, v) => v.$1.id == pluginId);
+    _presetFields.removeFor(pluginId);
+    for (final id in fieldIds) {
+      _fieldsCache.remove(id);
+      _fields.remove(id);
+    }
   }
 
   PresetField? getField(String id, Locale? locale) {
+    if (_presetFields.containsKey(id)) return _presetFields[id];
     if (!_fieldsCache.containsKey(id)) {
       final field = _fields[id];
       if (field == null) return null;
-      _fieldsCache[id] = field.withLocale(locale);
+      // Since a builder is usually added after a field definition,
+      // we're fetching it here, when the field is being built.
+      final fieldType = field.data['type'] ?? field.data['typ'];
+      final builder = _fieldBuilders[fieldType]?.$2;
+      _fieldsCache[id] = field.build(locale, builder);
     }
     return _fieldsCache[id];
   }
@@ -321,8 +364,10 @@ class FieldTemplate {
   final Map<String, dynamic> data;
   late final List<ComboOption> options;
   final PluginLocalizationsBranch localizations;
+  final String pluginId;
 
-  FieldTemplate(this.data, this.localizations, Plugin plugin) {
+  FieldTemplate(this.data, this.localizations, Plugin plugin)
+      : pluginId = plugin.id {
     options = _buildComboOptions(plugin);
   }
 
@@ -347,13 +392,12 @@ class FieldTemplate {
     return options;
   }
 
-  PresetField withLocale(Locale? locale) {
+  PresetField build(Locale? locale, FieldBuilder? builder) {
     final copy = Map.of(data);
     final newOptions = List.of(options);
     if (locale != null) {
       for (final k in ['label', 'placeholder']) {
-        if (copy.containsKey(k))
-          copy[k] = localizations.translate(locale, k);
+        if (copy.containsKey(k)) copy[k] = localizations.translate(locale, k);
       }
       if (options.isNotEmpty) {
         final labels = localizations.translateList(locale, 'labels');
@@ -364,6 +408,7 @@ class FieldTemplate {
         }
       }
     }
-    return fieldFromPlugin(copy, options: newOptions);
+
+    return builder?.call(copy) ?? fieldFromJson(copy, options: newOptions);
   }
 }

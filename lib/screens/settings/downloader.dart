@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/constants.dart';
 import 'package:every_door/generated/l10n/app_localizations.dart';
 import 'package:every_door/helpers/geometry/tile_range.dart';
@@ -7,7 +10,6 @@ import 'package:every_door/providers/cur_imagery.dart';
 import 'package:every_door/providers/downloaders.dart';
 import 'package:every_door/providers/imagery.dart';
 import 'package:every_door/providers/location.dart';
-import 'package:every_door/providers/overlays.dart';
 import 'package:every_door/widgets/attribution.dart';
 import 'package:every_door/widgets/tile_bounds_grid.dart';
 import 'package:flutter/material.dart';
@@ -230,7 +232,6 @@ class _TileCacheDownloaderState extends ConsumerState<TileCacheDownloader> {
                 ),
                 children: [
                   base.buildLayer(reset: true),
-                  ...ref.watch(overlayImageryProvider),
                   AttributionWidget(imagery),
                   PolygonLayer(
                     polygons: [

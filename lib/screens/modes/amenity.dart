@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/helpers/multi_icon.dart';
 import 'package:every_door/providers/editor_settings.dart';
 import 'package:every_door/screens/editor/map_chooser.dart';
@@ -9,7 +12,6 @@ import 'package:every_door/widgets/map_button.dart';
 import 'package:every_door/widgets/map_drag_create.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:every_door/constants.dart';
 import 'package:every_door/helpers/geometry/equirectangular.dart';
 import 'package:every_door/providers/api_status.dart';
 import 'package:every_door/providers/geolocation.dart';
@@ -60,6 +62,14 @@ class _AmenityPageState extends ConsumerState<AmenityPane> {
     if (mounted) setState(() {});
   }
 
+  @override
+  void didUpdateWidget(covariant AmenityPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Resubscribe, as per this method documentation.
+    oldWidget.def.removeListener(onDefChange);
+    widget.def.addListener(onDefChange);
+  }
+
   void updateFarFromUser() {
     final gpsLocation = ref.read(geolocationProvider);
     bool newFar;
@@ -78,14 +88,14 @@ class _AmenityPageState extends ConsumerState<AmenityPane> {
     }
   }
 
-  Future<void> updateNearest() async {
-    final int radius = farFromUser ? kFarVisibilityRadius : kVisibilityRadius;
-
-    await widget.def.updateNearest(forceRadius: radius);
+  Future<void> updateNearest([LatLngBounds? bounds]) async {
+    bounds ??= ref.read(visibleBoundsProvider);
+    if (bounds == null) return;
+    await widget.def.updateNearest(bounds);
 
     // Zoom automatically only when tracking location.
     if (mounted && ref.read(trackingProvider)) {
-      _controller.zoomToFit(widget.def.nearestPOI
+      _controller.zoomToFit(widget.def.nearest
           .take(widget.def.maxTileCount)
           .map((e) => e.location));
     }
@@ -108,7 +118,9 @@ class _AmenityPageState extends ConsumerState<AmenityPane> {
     });
     ref.listen(effectiveLocationProvider, (_, LatLng next) {
       updateFarFromUser();
-      updateNearest();
+    });
+    ref.listen(visibleBoundsProvider, (_, next) {
+      updateNearest(next);
     });
 
     final screenSize = MediaQuery.of(context).size;
@@ -130,8 +142,13 @@ class _AmenityPageState extends ConsumerState<AmenityPane> {
         right: false,
         top: isWide,
         child: PoiPane(
-          widget.def.nearestPOI.take(widget.def.maxTileCount).toList(),
-          isCountedOld: widget.def.isCountedOld,
+          amenities: widget.def.nearest.take(widget.def.maxTileCount).toList(),
+          describer: widget.def.describer,
+          getAmenityData: widget.def.getAmenityData,
+          onTap: (amenity) {
+            ref.read(microZoomedInProvider.notifier).state = null;
+            widget.def.openEditor(context: context, element: amenity);
+          },
         ),
       );
       final mediaHeight = MediaQuery.of(context).size.height;
@@ -160,27 +177,17 @@ class _AmenityPageState extends ConsumerState<AmenityPane> {
                 drawZoomButtons: farFromUser,
                 updateState: true,
                 layers: [
+                  ...widget.def.overlays.map((i) => i.buildLayer()),
                   ...widget.def.mapLayers(),
-                  CircleLayer(
-                    circles: [
-                      for (final objLocation in widget.def.otherPOI)
-                        CircleMarker(
-                          point: objLocation,
-                          color: Colors.black.withValues(alpha: 0.4),
-                          radius: 2.0,
-                        ),
-                    ],
-                  ),
+                  widget.def.otherObjectsLayer(),
                   MarkerLayer(
                     markers: [
-                      for (var i = widget.def.nearestPOI.length - 1;
-                          i >= 0;
-                          i--)
+                      for (var i = widget.def.nearest.length - 1; i >= 0; i--)
                         Marker(
-                          point: widget.def.nearestPOI[i].location,
+                          point: widget.def.nearest[i].location,
                           rotate: true,
-                          child: widget.def
-                              .buildMarker(i, widget.def.nearestPOI[i]),
+                          child:
+                              widget.def.buildMarker(i, widget.def.nearest[i]),
                         ),
                     ],
                   ),
@@ -188,11 +195,12 @@ class _AmenityPageState extends ConsumerState<AmenityPane> {
                 buttons: [
                   // Filter button
                   MapButton(
-                    icon: ref.watch(poiFilterProvider).isNotEmpty
-                        ? Icons.filter_alt
-                        : Icons.filter_alt_outlined,
+                    icon: MultiIcon(
+                        fontIcon: ref.watch(poiFilterProvider).isNotEmpty
+                            ? Icons.filter_alt
+                            : Icons.filter_alt_outlined),
                     tooltip: loc.mapFilter,
-                    onPressed: () {
+                    onPressed: (_) {
                       showModalBottomSheet(
                         context: context,
                         builder: (BuildContext context) {
@@ -206,6 +214,7 @@ class _AmenityPageState extends ConsumerState<AmenityPane> {
                       );
                     },
                   ),
+                  ...widget.def.buttons,
                 ],
               ),
             ),
@@ -223,7 +232,7 @@ class _AmenityPageState extends ConsumerState<AmenityPane> {
           ),
           alignment: leftHand ? Alignment.bottomLeft : Alignment.bottomRight,
           onDragEnd: (pos) {
-            widget.def.openEditor(context, pos);
+            widget.def.openEditor(context: context, location: pos);
           },
           onTap: () async {
             final location = await Navigator.push(
@@ -234,7 +243,7 @@ class _AmenityPageState extends ConsumerState<AmenityPane> {
               ),
             );
             if (context.mounted && location != null) {
-              widget.def.openEditor(context, location);
+              widget.def.openEditor(context: context, location: location);
             }
           },
         ),

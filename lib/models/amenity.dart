@@ -1,10 +1,15 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:ui';
 
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:every_door/constants.dart';
 import 'package:every_door/helpers/geometry/equirectangular.dart';
 import 'package:every_door/helpers/tags/element_kind.dart';
 import 'package:every_door/helpers/tags/main_key.dart';
 import 'package:every_door/helpers/tags/payment_tags.dart';
+import 'package:every_door/models/located.dart';
 import 'package:every_door/models/osm_element.dart';
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
@@ -13,7 +18,8 @@ import 'package:every_door/helpers/tags/tag_emoji.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 
-class OsmChange extends ChangeNotifier implements Comparable {
+@Bind()
+class OsmChange extends ChangeNotifier implements Comparable, Located {
   static final kDateFormat = DateFormat('yyyy-MM-dd');
   static const kCheckedKey = 'check_date';
 
@@ -29,6 +35,7 @@ class OsmChange extends ChangeNotifier implements Comparable {
   Map<String, String>? _fullTagsCache;
   DateTime updated;
   int? newId; // Not stored: used only during uploading.
+  String source;
 
   OsmChange(OsmElement element,
       {Map<String, String?>? newTags,
@@ -39,6 +46,7 @@ class OsmChange extends ChangeNotifier implements Comparable {
       this.newNodes,
       String? databaseId})
       : newTags = newTags ?? {},
+        source = element.source,
         _deleted = hardDeleted,
         updated = updated ?? DateTime.now(),
         // ignore: prefer_initializing_formals
@@ -50,6 +58,7 @@ class OsmChange extends ChangeNotifier implements Comparable {
   OsmChange.create({
     required Map<String, String> tags,
     required LatLng location,
+    required this.source,
     DateTime? updated,
     String? databaseId,
     this.error,
@@ -68,6 +77,7 @@ class OsmChange extends ChangeNotifier implements Comparable {
       return OsmChange.create(
         tags: Map.of(newTags.cast<String, String>()),
         location: newLocation!,
+        source: source,
         error: error,
         updated: updated,
         databaseId: databaseId,
@@ -88,7 +98,12 @@ class OsmChange extends ChangeNotifier implements Comparable {
   }
 
   // Location and modification
+  @override
   LatLng get location => newLocation ?? element!.center!;
+
+  @override
+  String get uniqueId => databaseId;
+
   set location(LatLng loc) {
     newLocation = loc;
     notifyListeners();
@@ -99,19 +114,23 @@ class OsmChange extends ChangeNotifier implements Comparable {
     return element!.id;
   }
 
-  bool get deleted =>
+  @override
+  bool get isDeleted =>
       _deleted ||
       (_mainKey?.startsWith(kDeleted) ?? false) ||
       (_mainKey?.startsWith(kBuildingDeleted) ?? false);
-  bool get hardDeleted => _deleted;
+
+  @override
   bool get isModified =>
       newTags.isNotEmpty ||
       newLocation != null ||
       newNodes != null ||
-      hardDeleted;
-  bool get isConfirmed =>
-      !deleted && (newTags.length == 1 && newTags.keys.first == kCheckedKey);
+      isHardDeleted;
+
+  @override
   bool get isNew => element == null;
+
+  bool get isHardDeleted => _deleted;
   bool get isArea => element?.isArea ?? false;
   bool get isPoint => element?.isPoint ?? true;
   bool get canDelete =>
@@ -119,6 +138,8 @@ class OsmChange extends ChangeNotifier implements Comparable {
       (element == null || element?.isMember == IsMember.no);
   bool get canMove =>
       (element?.isPoint ?? true) && (element?.isMember != IsMember.way);
+  bool get isConfirmed =>
+      !isDeleted && (newTags.length == 1 && newTags.keys.first == kCheckedKey);
   String? get mainKey => _mainKey;
 
   void revert() {
@@ -214,8 +235,8 @@ class OsmChange extends ChangeNotifier implements Comparable {
       check();
   }
 
-  set deleted(bool value) {
-    if (value == deleted) return;
+  set isDeleted(bool value) {
+    if (value == isDeleted) return;
     if (isNew || !canDelete) {
       // We use this for new because if they are not deleted higher up,
       // they are meant to have this prefix.
@@ -239,6 +260,7 @@ class OsmChange extends ChangeNotifier implements Comparable {
     'deleted integer',
     'error text',
     'updated integer',
+    'source text',
   ];
 
   factory OsmChange.fromJson(Map<String, dynamic> data) {
@@ -263,6 +285,7 @@ class OsmChange extends ChangeNotifier implements Comparable {
         location: location,
         error: data['error'],
         updated: updated,
+        source: data['source'] ?? 'osm',
         databaseId: data['id'],
       );
     }
@@ -281,6 +304,7 @@ class OsmChange extends ChangeNotifier implements Comparable {
   Map<String, dynamic> toJson() {
     LatLng? loc = newLocation;
     return {
+      'source': source,
       'id': databaseId,
       'osmid': element?.id.toString(),
       'new_tags': json.encode(newTags),
@@ -300,6 +324,7 @@ class OsmChange extends ChangeNotifier implements Comparable {
     if (newId == null && this.newId == null)
       throw ArgumentError('Please specify an id for the new element');
     return OsmElement(
+      source: source,
       id: OsmId(element?.type ?? OsmElementType.node, newId ?? this.newId ?? 0),
       version: newVersion ?? 1,
       timestamp: DateTime.now(),
@@ -500,7 +525,6 @@ class OsmChange extends ChangeNotifier implements Comparable {
         .containsAll(tags.keys);
   }
 
-
   // Helper methods
 
   /// Returns a map with complete object tags. All changes are applied,
@@ -561,13 +585,13 @@ class OsmChange extends ChangeNotifier implements Comparable {
     // Order for uploading: create (n), modify (nwr), delete(rwn).
     if (isNew) {
       return other.isNew ? 0 : -1;
-    } else if (isModified && !hardDeleted) {
+    } else if (isModified && !isHardDeleted) {
       if (other.isNew) return 1;
-      if (other.hardDeleted) return -1;
+      if (other.isHardDeleted) return -1;
       return kTypeOrder[id.type]!.compareTo(kTypeOrder[other.id.type]!);
     } else {
       // deleted
-      if (!other.hardDeleted) return 1;
+      if (!other.isHardDeleted) return 1;
       return kTypeOrder[other.id.type]!.compareTo(kTypeOrder[id.type]!);
     }
   }

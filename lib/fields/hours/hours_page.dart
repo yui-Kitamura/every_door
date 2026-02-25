@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/constants.dart';
 import 'package:every_door/fields/hours/days_editors.dart';
 import 'package:every_door/models/amenity.dart';
@@ -44,7 +47,7 @@ class _OpeningHoursPageState extends ConsumerState<OpeningHoursPage> {
     _updateInactiveCard();
 
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      ref.read(countryLocaleProvider).update(widget.element?.location);
+      ref.read(countryLocaleProvider.notifier).update(widget.element?.location);
     });
   }
 

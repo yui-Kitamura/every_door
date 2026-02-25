@@ -1,27 +1,38 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:every_door/constants.dart';
 import 'package:every_door/helpers/tags/element_kind.dart';
 import 'package:every_door/helpers/geometry/geometry.dart';
 import 'package:every_door/helpers/tags/snap_tags.dart';
+import 'package:fast_geohash/fast_geohash_str.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
-import 'package:proximity_hash/geohash.dart';
 import 'dart:convert';
 
 import 'package:xml/xml.dart';
 
+/// An element type: node, way, or relation.
+@Bind()
 enum OsmElementType { node, way, relation }
 
+/// Mapping from the enum value to strings.
 const kOsmElementTypeName = <OsmElementType, String>{
   OsmElementType.node: 'node',
   OsmElementType.way: 'way',
   OsmElementType.relation: 'relation',
 };
 
+/// OSM identifier: a type and a number.
+@Bind()
 class OsmId {
   final OsmElementType type;
   final int ref;
 
   const OsmId(this.type, this.ref);
 
+  /// Parses a string like "n123" into [OsmId] with the type from the letter
+  /// (e.g. node for "n") and the number from the rest.
   factory OsmId.fromString(String s) {
     OsmElementType typ;
     final t = s.toLowerCase().substring(0, 1);
@@ -34,8 +45,12 @@ class OsmId {
     return OsmId(typ, int.parse(s.substring(1)));
   }
 
+  /// Returns a representation like "node/123", to use in building
+  /// website URLs.
   String get fullRef => '${kOsmElementTypeName[type]}/$ref';
 
+  /// Returns a string like "n123" for a node with id=123. Can be
+  /// parsed back into an [OsmId] with [OsmId.fromString].
   @override
   String toString() {
     String typ;
@@ -56,6 +71,8 @@ class OsmId {
   int get hashCode => type.hashCode + ref.hashCode;
 }
 
+/// An OSM relation member. Contains of an OSM id and an optional [role].
+@Bind()
 class OsmMember {
   final OsmId id;
   final String? role;
@@ -78,9 +95,15 @@ class OsmMember {
   }
 }
 
+/// Whether this object is a member of a way or a relation. Way
+/// membership takes precedence.
+@Bind()
 enum IsMember { no, way, relation }
 
+/// An OSM element downloaded from the server.
+@Bind()
 class OsmElement {
+  final String source;
   final OsmId id;
   final Map<String, String> tags;
   final int version;
@@ -96,6 +119,7 @@ class OsmElement {
   OsmElementType get type => id.type;
 
   OsmElement({
+    required this.source,
     required this.id,
     required this.version,
     required this.timestamp,
@@ -124,6 +148,7 @@ class OsmElement {
       bool currentTimestamp = false,
       bool clearMembers = false}) {
     return OsmElement(
+      source: source,
       id: id != null ? OsmId(this.id.type, id) : this.id,
       version: version ?? this.version,
       timestamp: currentTimestamp ? DateTime.now().toUtc() : timestamp,
@@ -145,6 +170,7 @@ class OsmElement {
   OsmElement updateMeta(OsmElement? old) {
     if (old == null) return this;
     return OsmElement(
+      source: source,
       id: id,
       version: version,
       timestamp: timestamp,
@@ -172,6 +198,7 @@ class OsmElement {
     'nodes text',
     'members text',
     'is_member integer',
+    'source text',
   ];
 
   factory OsmElement.fromJson(Map<String, dynamic> data) {
@@ -179,6 +206,7 @@ class OsmElement {
     String? nodes = data['nodes'];
     final int m = data['is_member'];
     return OsmElement(
+      source: data['source'] ?? 'osm',
       id: OsmId.fromString(data['osmid']),
       version: data['version'],
       timestamp: DateTime.fromMillisecondsSinceEpoch(data['timestamp']),
@@ -208,6 +236,7 @@ class OsmElement {
     final center = this.center;
     return {
       'osmid': id.toString(),
+      'source': source,
       'version': version,
       'timestamp': timestamp.millisecondsSinceEpoch,
       'downloaded': downloaded?.millisecondsSinceEpoch,
@@ -219,8 +248,8 @@ class OsmElement {
           : (center.longitude * kCoordinatePrecision).round(),
       'geohash': center == null
           ? null
-          : GeoHasher().encode(center.longitude, center.latitude,
-              precision: kGeohashPrecision),
+          : geohash.encode(
+              center.latitude, center.longitude, kGeohashPrecision),
       // Not serializing bounds
       'tags': json.encode(tags),
       'nodes': nodes?.join(','),

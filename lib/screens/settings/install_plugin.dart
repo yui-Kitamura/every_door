@@ -1,8 +1,12 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:io';
 
 import 'package:every_door/models/plugin.dart';
 import 'package:every_door/models/version.dart';
 import 'package:every_door/providers/plugin_repo.dart';
+import 'package:every_door/providers/shared_preferences.dart';
 import 'package:every_door/screens/settings/log.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,7 +15,6 @@ import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:every_door/generated/l10n/app_localizations.dart'
     show AppLocalizations;
-import 'package:shared_preferences/shared_preferences.dart';
 
 class InstallPluginPage extends ConsumerStatefulWidget {
   /// An URI for the plugin. Can be either a direct URL for a file to download
@@ -176,7 +179,7 @@ class _InstallPluginPageState extends ConsumerState<InstallPluginPage> {
 
       final plugin = await repo.installFromTmpDir(pluginDir);
 
-      if (plugin.intro != null && await _needShowIntro(plugin) && mounted) {
+      if (plugin.intro != null && _needShowIntro(plugin) && mounted) {
         _logger.info('Showing intro for ${plugin.id}!');
         _saveIntroShown(plugin);
         await plugin.showIntro(context);
@@ -196,9 +199,9 @@ class _InstallPluginPageState extends ConsumerState<InstallPluginPage> {
 
   static const _kIntroRefKey = 'intro_shown';
 
-  Future<bool> _needShowIntro(Plugin plugin) async {
+  bool _needShowIntro(Plugin plugin) {
     if (plugin.intro == null) return false;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ref.read(sharedPrefsProvider).requireValue;
     final introList = prefs.getStringList(_kIntroRefKey);
     if (introList == null || introList.isEmpty) return true;
     final Map<String, PluginVersion> introMap = Map.fromEntries(introList
@@ -212,7 +215,7 @@ class _InstallPluginPageState extends ConsumerState<InstallPluginPage> {
   Future<void> _saveIntroShown(Plugin plugin) async {
     if (plugin.intro == null) return;
     final value = '${plugin.id}:${plugin.version}';
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ref.read(sharedPrefsProvider).requireValue;
     List<String>? introList = prefs.getStringList(_kIntroRefKey);
     if (introList == null || introList.isEmpty) {
       introList = [value];

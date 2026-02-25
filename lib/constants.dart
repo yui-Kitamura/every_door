@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart' show Colors, TextStyle;
 
 const kAppTitle = 'Every Door';
-const kAppVersion = '7.1'; // Also used for presets.db versioning
+const kAppVersion = '8.0-alpha2'; // Also used for presets.db versioning
 
 // we might want to redefine
 const kOldAmenityDays = 60; // check_date expiration rate
@@ -53,10 +53,6 @@ const kMaxBulkDownloadZoom = 18; // Max zoom for bulk downloading tiles
 const kRasterCacheSizeMB = 1024; // Passed to raster caches
 const kVectorCacheSizeMB = 256; // Passed to vector caches
 
-const kOsmEndpoint = 'api.openstreetmap.org';
-const kOsmAuth2Endpoint = 'www.openstreetmap.org';
-// const kOsmEndpoint = 'master.apis.dev.openstreetmap.org';
-// const kOsmAuth2Endpoint = 'master.apis.dev.openstreetmap.org';
 const kScribblesEndpoint = 'geoscribble.osmz.ru';
 const kEdprEndpoint = 'plugins.every-door.app';
 

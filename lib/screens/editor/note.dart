@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:adaptive_dialog/adaptive_dialog.dart';
 import 'package:every_door/constants.dart';
 import 'package:every_door/models/note.dart';
@@ -69,7 +72,7 @@ class _NoteEditorPaneState extends ConsumerState<NoteEditorPane> {
 
   Future<void> updateShortcutsList() async {
     final popular =
-        await ref.read(notesProvider).getPopularNotes(kMaxShortcuts);
+        await ref.read(notesProvider.notifier).getPopularNotes(kMaxShortcuts);
     // First go popular, then unused defaults until we get to max.
     setState(() {
       if (popular.length == kMaxShortcuts)
@@ -128,7 +131,7 @@ class _NoteEditorPaneState extends ConsumerState<NoteEditorPane> {
     if (isChanged) {
       final note = _buildEditedNote();
       if (note != null) {
-        ref.read(notesProvider).saveNote(note);
+        ref.read(notesProvider.notifier).saveNote(note);
       }
     }
     if (pop) Navigator.pop(context);
@@ -138,7 +141,7 @@ class _NoteEditorPaneState extends ConsumerState<NoteEditorPane> {
     if (widget.note != null) {
       final note = _buildEditedNote();
       if (note != null) {
-        ref.read(notesProvider).deleteNote(note);
+        ref.read(notesProvider.notifier).deleteNote(note);
       }
     }
     Navigator.pop(context);

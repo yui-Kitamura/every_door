@@ -1,5 +1,7 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:adaptive_dialog/adaptive_dialog.dart';
-import 'package:country_coder/country_coder.dart';
 import 'package:every_door/helpers/geometry/equirectangular.dart';
 import 'package:every_door/helpers/in_countries.dart';
 import 'package:every_door/models/address.dart';
@@ -43,7 +45,10 @@ class _BuildingEditorPaneState extends ConsumerState<BuildingEditorPane> {
     super.initState();
     _levelsFocus = FocusNode();
     building = widget.building?.copy() ??
-        OsmChange.create(tags: {'building': 'yes'}, location: widget.location);
+        OsmChange.create(
+            tags: {'building': 'yes'},
+            location: widget.location,
+            source: 'osm');
     buildingsHaveAddresses(widget.location).then((value) {
       buildingsNeedAddresses = value;
     });
@@ -120,7 +125,7 @@ class _BuildingEditorPaneState extends ConsumerState<BuildingEditorPane> {
     if (building.isNew) {
       changes.deleteChange(building);
     } else {
-      building.deleted = true;
+      building.isDeleted = true;
       changes.saveChange(building);
     }
     saved = true;
@@ -400,7 +405,7 @@ class _BuildingEditorPaneState extends ConsumerState<BuildingEditorPane> {
                       },
                       child: Text(loc.buildingMoreButton.toUpperCase() + '...'),
                     ),
-                    if (!building.deleted &&
+                    if (!building.isDeleted &&
                         widget.building != null &&
                         building.canDelete)
                       TextButton(

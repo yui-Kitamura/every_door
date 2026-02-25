@@ -1,11 +1,16 @@
-import 'package:country_coder/country_coder.dart';
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:every_door/helpers/in_countries.dart';
 import 'package:every_door/helpers/multi_icon.dart';
 import 'package:every_door/helpers/tags/element_kind.dart';
 import 'package:every_door/models/amenity.dart';
 import 'package:every_door/models/imagery/vector_assets.dart';
+import 'package:every_door/models/located.dart';
 import 'package:every_door/models/plugin.dart';
 import 'package:every_door/models/preset.dart';
+import 'package:every_door/plugins/interface.dart';
 import 'package:every_door/providers/cur_imagery.dart';
 import 'package:every_door/providers/location.dart';
 import 'package:every_door/providers/presets.dart';
@@ -16,47 +21,40 @@ import 'package:every_door/screens/editor/sheet.dart';
 import 'package:every_door/screens/modes/definitions/base.dart';
 import 'package:every_door/widgets/entrance_markers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show Ref;
 import 'package:latlong2/latlong.dart';
 import 'package:every_door/generated/l10n/app_localizations.dart'
     show AppLocalizations;
 
+@Bind(bridge: true, implicitSupers: true)
 abstract class EntrancesModeDefinition extends BaseModeDefinition {
-  List<OsmChange> nearest = [];
   LatLng? newLocation;
 
-  List<ElementKindImpl> _kinds = [
-    ElementKind.entrance,
-    ElementKind.building,
-    ElementKind.address,
-  ];
+  EntrancesModeDefinition(super.ref) {
+    ourKinds = [
+      ElementKind.entrance,
+      ElementKind.building,
+      ElementKind.address,
+    ];
+  }
 
-  EntrancesModeDefinition(super.ref);
+  EntrancesModeDefinition.fromPlugin(EveryDoorApp app) : this(app.ref);
 
   @override
   String get name => "entrances";
 
   @override
-  MultiIcon getIcon(BuildContext context, bool outlined) {
+  MultiIcon getIcon(BuildContext context, bool active) {
     final loc = AppLocalizations.of(context)!;
     return MultiIcon(
-      fontIcon: !outlined ? Icons.home : Icons.home_outlined,
+      fontIcon: active ? Icons.home : Icons.home_outlined,
       tooltip: loc.navEntrancesMode,
     );
   }
 
   ElementKindImpl getOurKind(OsmChange element) =>
-      ElementKind.matchChange(element, _kinds);
-
-  @override
-  bool isOurKind(OsmChange element) =>
-      getOurKind(element) != ElementKind.unknown;
-
-  @override
-  Future<void> updateNearest() async {
-    nearest = await super.getNearestChanges();
-    notifyListeners();
-  }
+      ElementKind.matchChange(element, ourKinds);
 
   double get adjustZoomPrimary => 0.0;
 
@@ -66,9 +64,10 @@ abstract class EntrancesModeDefinition extends BaseModeDefinition {
 
   MultiIcon? getButton(BuildContext context, bool isPrimary);
 
-  void openEditor({
+  @override
+  Future<void> openEditor({
     required BuildContext context,
-    OsmChange? element,
+    Located? element,
     LatLng? location,
     bool? isPrimary,
   });
@@ -82,7 +81,7 @@ abstract class EntrancesModeDefinition extends BaseModeDefinition {
 
   @override
   void updateFromJson(Map<String, dynamic> data, Plugin plugin) {
-    _kinds = parseKinds(data['kinds']) ?? parseKinds(data['kind']) ?? _kinds;
+    readKindsFromJson(data);
   }
 }
 
@@ -106,17 +105,13 @@ class DefaultEntrancesModeDefinition extends EntrancesModeDefinition {
 
   @override
   List<Widget> mapLayers() {
-    if (ref.read(imageryIsBaseProvider)) return [];
-    return [_kBuildingContours.buildLayer()];
+    if (ref.read(imageryIsBaseProvider)) return super.mapLayers();
+    return [_kBuildingContours.buildLayer(), ...super.mapLayers()];
   }
 
   @override
-  Future<void> updateNearest({LatLng? forceLocation, int? forceRadius}) async {
-    final LatLng location =
-        forceLocation ?? ref.read(effectiveLocationProvider);
-
-    final nearest = await super.getNearestChanges(
-        forceLocation: forceLocation, forceRadius: forceRadius);
+  Future<void> updateNearest(LatLngBounds bounds) async {
+    final nearest = await super.getNearestChanges(bounds);
 
     // Sort by buildings, addresses, entrances
     int indexKind(OsmChange change) {
@@ -129,7 +124,7 @@ class DefaultEntrancesModeDefinition extends EntrancesModeDefinition {
 
     nearest.sort((a, b) => indexKind(a).compareTo(indexKind(b)));
 
-    buildingsNeedAddresses = await buildingsHaveAddresses(location);
+    buildingsNeedAddresses = await buildingsHaveAddresses(bounds.center);
 
     this.nearest = nearest;
     notifyListeners();
@@ -234,12 +229,15 @@ class DefaultEntrancesModeDefinition extends EntrancesModeDefinition {
   }
 
   @override
-  void openEditor({
+  Future<void> openEditor({
     required BuildContext context,
-    OsmChange? element,
+    Located? element,
     LatLng? location,
     bool? isPrimary,
   }) async {
+    if (element != null && element is! OsmChange) return;
+    element as OsmChange?;
+
     final LatLng loc =
         location ?? element?.location ?? ref.read(effectiveLocationProvider);
     Widget pane;
@@ -381,14 +379,14 @@ class EntrancesModeCustom extends EntrancesModeDefinition {
   double get adjustZoomSecondary => _secondary.zoom ?? 0.0;
 
   @override
-  MultiIcon getIcon(BuildContext context, bool outlined) {
-    return (outlined ? _icon ?? _iconActive : _iconActive ?? _icon) ??
-        super.getIcon(context, outlined);
+  MultiIcon getIcon(BuildContext context, bool active) {
+    return (active ? _iconActive ?? _icon : _icon ?? _iconActive) ??
+        super.getIcon(context, active);
   }
 
   @override
   SizedMarker? buildMarker(OsmChange element) {
-    final kind = ElementKind.matchChange(element, _kinds);
+    final kind = ElementKind.matchChange(element, ourKinds);
     final data = _rendering[kind.name] as Map<String, dynamic>?;
     if (data != null) {
       final isComplete = (data['requiredKeys'] as List<dynamic>?)
@@ -420,12 +418,15 @@ class EntrancesModeCustom extends EntrancesModeDefinition {
   }
 
   @override
-  void openEditor({
+  Future<void> openEditor({
     required BuildContext context,
-    OsmChange? element,
+    Located? element,
     LatLng? location,
     bool? isPrimary,
   }) async {
+    if (element != null && element is! OsmChange) return;
+    element as OsmChange?;
+
     // When tapping a button, we need to know which kind of object
     // to create.
     Preset? preset;

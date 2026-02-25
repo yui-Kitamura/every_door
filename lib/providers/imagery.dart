@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:async';
 import 'dart:convert';
 
@@ -6,20 +9,19 @@ import 'package:every_door/models/imagery/bing.dart';
 import 'package:every_door/models/imagery/tiles.dart';
 import 'package:every_door/models/imagery/tms.dart';
 import 'package:every_door/providers/presets.dart';
+import 'package:every_door/providers/shared_preferences.dart';
+import 'package:fast_geohash/fast_geohash_str.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:every_door/models/imagery.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:logging/logging.dart';
-import 'package:proximity_hash/proximity_hash.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
-final imageryProvider = StateNotifierProvider<ImageryProvider, Imagery>(
-    (ref) => ImageryProvider(ref));
+final imageryProvider =
+    NotifierProvider<ImageryProvider, Imagery>(ImageryProvider.new);
 
-class ImageryProvider extends StateNotifier<Imagery> {
+class ImageryProvider extends Notifier<Imagery> {
   static final _logger = Logger('ImageryProvider');
-  final Ref _ref;
   bool loaded = false;
   final List<Imagery> _additional = [];
 
@@ -70,16 +72,17 @@ class ImageryProvider extends StateNotifier<Imagery> {
     maxZoom: 22,
   ).decrypt();
 
-  ImageryProvider(this._ref) : super(mapboxImagery) {
-    _updateBingUrlTemplate();
+  @override
+  Imagery build() {
     loaded = false;
+    _updateBingUrlTemplate();
     _loadState();
+    return mapboxImagery;
   }
 
   Future<List<Imagery>> getImageryListForLocation(LatLng location) async {
-    final geohash =
-        geoHasher.encode(location.longitude, location.latitude, precision: 4);
-    final rows = await _ref.read(presetProvider).imageryQuery(geohash);
+    final hash = geohash.encode(location.latitude, location.longitude, 4);
+    final rows = await ref.read(presetProvider).imageryQuery(hash);
     List<Imagery> results = rows
         .map((row) => TileImagery.fromJson(row))
         .whereType<Imagery>()
@@ -96,7 +99,7 @@ class ImageryProvider extends StateNotifier<Imagery> {
   /// system keys it processes in code: for Bing, Maxar, and Mapbox.
   /// If it's none of those, it asks [PresetProvider] if it knows this key.
   Future<void> _loadState() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ref.read(sharedPrefsProvider).requireValue;
     final imageryId = prefs.getString(kImageryKey);
     if (imageryId != null) {
       if (imageryId == bingImagery.id) {
@@ -106,10 +109,11 @@ class ImageryProvider extends StateNotifier<Imagery> {
       } else if (imageryId == mapboxImagery.id) {
         await _initializeAndSet(mapboxImagery);
       } else if (_additional.any((i) => i.id == imageryId)) {
-        await _initializeAndSet(_additional.firstWhere((i) => i.id == imageryId));
+        await _initializeAndSet(
+            _additional.firstWhere((i) => i.id == imageryId));
       } else {
         final imagery =
-            await _ref.read(presetProvider).singleImageryQuery(imageryId);
+            await ref.read(presetProvider).singleImageryQuery(imageryId);
         if (imagery != null) {
           await _initializeAndSet(TileImagery.fromJson(imagery));
         }
@@ -120,7 +124,7 @@ class ImageryProvider extends StateNotifier<Imagery> {
 
   /// Simply saves the current chosen imagery to shared preferences.
   Future<void> _saveState() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ref.read(sharedPrefsProvider).requireValue;
     await prefs.setString(kImageryKey, state.id);
   }
 
@@ -152,7 +156,7 @@ class ImageryProvider extends StateNotifier<Imagery> {
       if (force) {
         await setImagery(imagery);
       } else {
-        final prefs = await SharedPreferences.getInstance();
+        final prefs = ref.read(sharedPrefsProvider).requireValue;
         final imageryId = prefs.getString(kImageryKey);
         if (imageryId != null && imageryId == imagery.id) {
           await _initializeAndSet(imagery);
@@ -179,7 +183,7 @@ class ImageryProvider extends StateNotifier<Imagery> {
   }
 
   Future _updateBingUrlTemplate() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = ref.read(sharedPrefsProvider).requireValue;
     final metaUrl = Uri.https(
       'dev.virtualearth.net',
       '/REST/V1/Imagery/Metadata/Aerial',

@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/models/plugin.dart';
 import 'package:flutter/material.dart';
 import 'package:every_door/generated/l10n/app_localizations.dart'
@@ -6,6 +9,7 @@ import 'package:every_door/generated/l10n/app_localizations.dart'
 class PluginCard extends StatelessWidget {
   final PluginData plugin;
   final bool active;
+  final bool short;
   final String? actionText;
   final Function()? onAction;
   final Function()? onMore;
@@ -14,6 +18,7 @@ class PluginCard extends StatelessWidget {
       {super.key,
       required this.plugin,
       this.active = true,
+      this.short = false,
       this.onAction,
       this.onMore,
       this.actionText});
@@ -46,8 +51,9 @@ class PluginCard extends StatelessWidget {
             leading: plugin.icon?.getWidget(icon: false, size: 30),
             enabled: active,
             onTap: onMore,
+            trailing: short && onAction == null ? Icon(Icons.navigate_next) : null,
           ),
-          if (description.isNotEmpty)
+          if (!short && description.isNotEmpty)
             Padding(
               padding:
                   const EdgeInsets.only(left: 16.0, right: 24.0, bottom: 16.0),
@@ -59,22 +65,23 @@ class PluginCard extends StatelessWidget {
                     ),
               ),
             ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              if (actionText != null && onAction != null)
-                TextButton(
-                  child: Text(actionText ?? 'ACTION'),
-                  onPressed: onAction,
-                ),
-              if (onMore != null)
-                TextButton(
-                  child: Text(loc.pluginsMore.toUpperCase()),
-                  onPressed: onMore,
-                ),
-              const SizedBox(width: 8.0),
-            ],
-          ),
+          if (!short)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (actionText != null && onAction != null)
+                  TextButton(
+                    child: Text(actionText ?? 'ACTION'),
+                    onPressed: onAction,
+                  ),
+                if (onMore != null)
+                  TextButton(
+                    child: Text(loc.pluginsMore.toUpperCase()),
+                    onPressed: onMore,
+                  ),
+                const SizedBox(width: 8.0),
+              ],
+            ),
         ],
       ),
     );

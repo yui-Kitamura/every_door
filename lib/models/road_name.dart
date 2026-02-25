@@ -1,5 +1,8 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:latlong2/latlong.dart' show LatLng;
-import 'package:proximity_hash/geohash.dart';
+import 'package:fast_geohash/fast_geohash_str.dart' as g;
 
 class RoadNameRecord {
   final String geohash;
@@ -9,8 +12,8 @@ class RoadNameRecord {
   const RoadNameRecord(this.name, this.geohash, [this.downloaded]);
 
   LatLng get center {
-    final coords = GeoHasher().decode(geohash);
-    return LatLng(coords[1], coords[0]);
+    final coords = g.geohash.decode(geohash);
+    return LatLng(coords.lat, coords.lon);
   }
 
   @override

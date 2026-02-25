@@ -1,12 +1,14 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:async';
 import 'package:logging/logging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_compass_v2/flutter_compass_v2.dart';
 import 'dart:math' show pi;
 
-final compassProvider = StateNotifierProvider<CompassController, CompassData?>(
-  (ref) => CompassController(),
-);
+final compassProvider =
+    NotifierProvider<CompassController, CompassData?>(CompassController.new);
 
 class CompassData {
   // radians, zero is North
@@ -15,17 +17,18 @@ class CompassData {
   const CompassData(this.heading);
 }
 
-class CompassController extends StateNotifier<CompassData?> {
+class CompassController extends Notifier<CompassData?> {
   static final _logger = Logger('CompassController');
   StreamSubscription<CompassEvent>? _sub;
 
-  CompassController() : super(null) {
+  @override
+  CompassData? build() {
     final compassEvents = FlutterCompass.events;
     if (compassEvents == null) {
       _logger.warning("Compass events not available on this platform.");
-      state = null;
-      return;
+      return null;
     }
+
     _sub = compassEvents.listen(
       (CompassEvent event) {
         if (event.heading != null) {
@@ -33,7 +36,7 @@ class CompassController extends StateNotifier<CompassData?> {
           state = CompassData(headingRadians);
         } else {
           _logger.fine('Compass is calibrating, heading is null.');
-          state = const CompassData(null);
+          state = CompassData(null);
         }
       },
       onError: (error) {
@@ -41,11 +44,8 @@ class CompassController extends StateNotifier<CompassData?> {
         state = null;
       },
     );
-  }
 
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
+    ref.onDispose(() => _sub?.cancel());
+    return null;
   }
 }

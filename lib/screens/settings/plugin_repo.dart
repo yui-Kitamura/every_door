@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:adaptive_dialog/adaptive_dialog.dart';
 import 'package:every_door/fields/helpers/qr_code.dart';
 import 'package:every_door/models/plugin.dart';
@@ -8,7 +11,8 @@ import 'package:every_door/screens/settings/install_plugin.dart';
 import 'package:every_door/widgets/plugin_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
+import 'package:every_door/generated/l10n/app_localizations.dart'
+    show AppLocalizations;
 
 class PluginRepositoryPage extends ConsumerStatefulWidget {
   const PluginRepositoryPage({super.key});
@@ -104,21 +108,24 @@ class _PluginRepositoryPageState extends ConsumerState<PluginRepositoryPage> {
       if (!_experimental) list.removeWhere((p) => p.experimental);
       list.sort((a, b) => b.downloads.compareTo(a.downloads));
       items = list
-              .map((p) => PluginCard(
-                    plugin: p,
-                    actionText: installed.containsKey(p.id)
-                        ? p.version.fresherThan(installed[p.id])
-                            ? loc.pluginsUpdate.toUpperCase()
-                            : null
-                        : loc.pluginsInstall.toUpperCase(),
-                    onAction: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => InstallPluginPage(p.url!)),
-                      );
-                    },
-                  ))
-              .toList();
+          .where((p) =>
+              !installed.containsKey(p.id) ||
+              p.version.fresherThan(installed[p.id]))
+          .map((p) => PluginCard(
+                plugin: p,
+                actionText: installed.containsKey(p.id)
+                    ? p.version.fresherThan(installed[p.id])
+                        ? loc.pluginsUpdate.toUpperCase()
+                        : null
+                    : loc.pluginsInstall.toUpperCase(),
+                onAction: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => InstallPluginPage(p.url!)),
+                  );
+                },
+              ))
+          .toList();
     }
 
     return Scaffold(

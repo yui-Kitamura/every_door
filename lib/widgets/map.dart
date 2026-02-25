@@ -1,8 +1,13 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:async';
 import 'dart:math' show min, max;
 
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:every_door/constants.dart';
 import 'package:every_door/helpers/geometry/closest_points.dart';
+import 'package:every_door/helpers/multi_icon.dart';
 import 'package:every_door/providers/overlays.dart';
 import 'package:every_door/widgets/pin_marker.dart';
 import 'package:every_door/providers/editor_settings.dart';
@@ -24,6 +29,7 @@ import 'package:every_door/generated/l10n/app_localizations.dart'
 
 import '../providers/cur_imagery.dart';
 
+@Bind()
 class CustomMapController {
   Function(Iterable<LatLng>)? zoomListener;
   MapController? mapController;
@@ -45,6 +51,7 @@ class CustomMapController {
 
 /// General map widget for every map in Every Door. Encloses layer management,
 /// interaction, additional buttons etc etc.
+@Bind()
 class CustomMap extends ConsumerStatefulWidget {
   final void Function(LatLng, double Function(LatLng))? onTap;
   final CustomMapController? controller;
@@ -129,8 +136,8 @@ class _CustomMapState extends ConsumerState<CustomMap> {
 
     if (event is MapEventWithMove) {
       if (!fromController) {
-        ref.read(trackingProvider.notifier).state = false;
-        ref.read(zoomProvider.notifier).state = event.camera.zoom;
+        ref.read(trackingProvider.notifier).disable();
+        ref.read(zoomProvider.notifier).update(event.camera.zoom);
         if (widget.switchToNavigate) {
           final bool isNavigating = ref.read(navigationModeProvider);
           if (isNavigating) {
@@ -141,9 +148,13 @@ class _CustomMapState extends ConsumerState<CustomMap> {
           } else if (event.camera.zoom < kEditMinZoom) {
             // Switch navigation mode on
             ref.read(navigationModeProvider.notifier).state = true;
-            ref.read(rotationProvider.notifier).state = 0;
+            ref.read(rotationProvider.notifier).reset();
           }
         }
+      } else {
+        ref
+            .read(visibleBoundsProvider.notifier)
+            .update(event.camera.visibleBounds);
       }
       if (event.camera.center != _center) {
         setState(() {
@@ -159,16 +170,19 @@ class _CustomMapState extends ConsumerState<CustomMap> {
       if (!fromController) {
         ref.read(effectiveLocationProvider.notifier).set(event.camera.center);
       }
+      ref
+          .read(visibleBoundsProvider.notifier)
+          .update(event.camera.visibleBounds);
     } else if (event is MapEventRotateEnd) {
       if (event.source != MapEventSource.mapController) {
         double rotation = _controller.camera.rotation;
         while (rotation > 200) rotation -= 360;
         while (rotation < -200) rotation += 360;
         if (rotation.abs() < kRotationThreshold) {
-          ref.read(rotationProvider.notifier).state = 0.0;
+          ref.read(rotationProvider.notifier).reset();
           _controller.rotate(0.0);
         } else {
-          ref.read(rotationProvider.notifier).state = rotation;
+          ref.read(rotationProvider.notifier).update(rotation);
         }
       }
     }
@@ -220,7 +234,7 @@ class _CustomMapState extends ConsumerState<CustomMap> {
     else if (zoom > maxZoomHere) zoom = max(curZoom, maxZoomHere);
     if ((zoom - curZoom).abs() >= kZoomThreshold) {
       _controller.move(_controller.camera.center, zoom);
-      ref.read(zoomProvider.notifier).state = zoom;
+      ref.read(zoomProvider.notifier).update(zoom);
     }
   }
 
@@ -250,15 +264,15 @@ class _CustomMapState extends ConsumerState<CustomMap> {
           ref.read(effectiveLocationProvider.notifier).set(location);
         }
       });
-
-      // When turning the tracking on, move the map immediately.
-      ref.listen(trackingProvider, (_, bool newState) {
-        if (trackLocation != null && newState) {
-          _controller.move(trackLocation, _controller.camera.zoom);
-          ref.read(effectiveLocationProvider.notifier).set(trackLocation);
-        }
-      });
     }
+
+    // When turning the tracking on, move the map immediately.
+    ref.listen(trackingProvider, (_, bool newState) {
+      if (trackLocation != null && newState) {
+        _controller.move(trackLocation, _controller.camera.zoom);
+        ref.read(effectiveLocationProvider.notifier).set(trackLocation);
+      }
+    });
 
     ref.watch(geolocationProvider); // not using, but it triggers repaints
 
@@ -302,7 +316,9 @@ class _CustomMapState extends ConsumerState<CustomMap> {
       ),
       children: [
         imagery.buildLayer(reset: true),
-        ...ref.watch(overlayImageryProvider),
+        ...ref
+            .watch(overlayImageryProvider)
+            .map((i) => i.buildLayer(reset: true)),
         LocationMarkerWidget(),
         WalkPathPolyline(faint: widget.faintWalkPath),
         AttributionWidget(imagery),
@@ -319,9 +335,9 @@ class _CustomMapState extends ConsumerState<CustomMap> {
               horizontal: 0.0,
               vertical: 10.0,
             ),
-            icon: Icons.menu,
+            icon: MultiIcon.font(Icons.menu),
             tooltip: loc.mapSettings,
-            onPressed: () {
+            onPressed: (_) {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => SettingsPage()),
@@ -335,9 +351,9 @@ class _CustomMapState extends ConsumerState<CustomMap> {
               // Tracking button
               MapButton(
                 enabled: !ref.watch(trackingProvider) && trackLocation != null,
-                icon: Icons.my_location,
+                icon: MultiIcon.font(Icons.my_location),
                 tooltip: loc.mapLocate,
-                onPressed: () {
+                onPressed: (_) {
                   ref
                       .read(geolocationProvider.notifier)
                       .enableTracking(context);
@@ -355,8 +371,8 @@ class _CustomMapState extends ConsumerState<CustomMap> {
                   ),
                 ),
                 tooltip: loc.mapStraight,
-                onPressed: () {
-                  ref.read(rotationProvider.notifier).state = 0.0;
+                onPressed: (_) {
+                  ref.read(rotationProvider.notifier).reset();
                   _controller.rotate(0.0);
                   _rotation = 0;
                 },

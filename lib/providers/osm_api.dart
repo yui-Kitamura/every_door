@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:convert';
 
 import 'package:every_door/helpers/geometry/snap_nodes.dart';
@@ -8,7 +11,7 @@ import 'package:every_door/models/road_name.dart';
 import 'package:every_door/providers/api_status.dart';
 import 'package:every_door/providers/changes.dart';
 import 'package:every_door/providers/changeset_tags.dart';
-import 'package:every_door/providers/osm_auth.dart';
+import 'package:every_door/providers/auth.dart';
 import 'package:every_door/providers/osm_data.dart';
 import 'package:flutter_map/flutter_map.dart' show LatLngBounds;
 import 'package:http/http.dart' as http;
@@ -34,12 +37,15 @@ class OsmApiError implements Exception {
 class OsmApiHelper {
   final Ref _ref;
   static final _logger = Logger('OsmApiHelper');
+  static const kSource = 'osm'; // TODO: make overridable
 
   OsmApiHelper(this._ref);
 
+  String get endpoint => _ref.read(authProvider)['osm']!.endpoint;
+
   Future<List<OsmElement>> map(LatLngBounds bounds,
       {Set<RoadNameRecord>? roadNames}) async {
-    final url = Uri.https(kOsmEndpoint, '/api/0.6/map', {
+    final url = Uri.https(endpoint, '/api/0.6/map', {
       'bbox': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
     });
     var client = http.Client();
@@ -47,7 +53,8 @@ class OsmApiHelper {
     try {
       var response = await client.send(request);
       if (response.statusCode != 200) {
-        throw OsmApiError(response.statusCode, 'Failed to query OSM API: ${response.statusCode} $url');
+        throw OsmApiError(response.statusCode,
+            'Failed to query OSM API: ${response.statusCode} $url');
       }
       final elements = await response.stream
           .transform(utf8.decoder)
@@ -55,7 +62,7 @@ class OsmApiHelper {
           .selectSubtreeEvents(
               (event) => kOsmTypes.containsKey(event.localName))
           .toXmlNodes()
-          .transform(XmlToOsmConverter())
+          .transform(XmlToOsmConverter(kSource))
           .transform(MarkReferenced())
           .transform(CollectGeometry())
           .transform(ExtractRoadNames(roadNames))
@@ -75,7 +82,7 @@ class OsmApiHelper {
     try {
       final typeName = kOsmElementTypeName[id.type]!;
       final full = id.type == OsmElementType.node ? '' : '/full';
-      final url = Uri.https(kOsmEndpoint, '/api/0.6/$typeName/${id.ref}$full');
+      final url = Uri.https(endpoint, '/api/0.6/$typeName/${id.ref}$full');
       var request = http.Request('GET', url);
       var response = await client.send(request);
       if (response.statusCode != 200) {
@@ -87,7 +94,7 @@ class OsmApiHelper {
           .selectSubtreeEvents(
               (event) => kOsmTypes.containsKey(event.localName))
           .toXmlNodes()
-          .transform(XmlToOsmConverter())
+          .transform(XmlToOsmConverter(kSource))
           .transform(CollectGeometry())
           .flatten()
           .toList();
@@ -106,7 +113,7 @@ class OsmApiHelper {
         final typeIds = ids.where((id) => id.type == typ);
         for (int i = 0; i < (typeIds.length / kBatchSize).ceil(); i++) {
           final typesName = kOsmElementTypeName[typ]! + 's';
-          final url = Uri.https(kOsmEndpoint, '/api/0.6/$typesName', {
+          final url = Uri.https(endpoint, '/api/0.6/$typesName', {
             typesName: typeIds
                 .skip(kBatchSize * i)
                 .take(kBatchSize)
@@ -125,7 +132,7 @@ class OsmApiHelper {
               .selectSubtreeEvents(
                   (event) => kOsmTypes.containsKey(event.localName))
               .toXmlNodes()
-              .transform(XmlToOsmConverter())
+              .transform(XmlToOsmConverter(kSource))
               .flatten()
               .toList();
           elements.addAll(els);
@@ -138,7 +145,7 @@ class OsmApiHelper {
   }
 
   Future<List<OsmElement>> snapWays(LatLngBounds bounds) async {
-    final url = Uri.https(kOsmEndpoint, '/api/0.6/map', {
+    final url = Uri.https(endpoint, '/api/0.6/map', {
       'bbox': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
     });
     var client = http.Client();
@@ -154,7 +161,7 @@ class OsmApiHelper {
           .selectSubtreeEvents(
               (event) => kOsmTypes.containsKey(event.localName))
           .toXmlNodes()
-          .transform(XmlToOsmConverter())
+          .transform(XmlToOsmConverter(kSource))
           .transform(CollectGeometry())
           .transform(FilterSnapTargets())
           .flatten()
@@ -175,7 +182,7 @@ class OsmApiHelper {
       int spareId = -1000;
       for (final change in changes) {
         if (!change.isModified) return;
-        final action = change.hardDeleted
+        final action = change.isHardDeleted
             ? 'delete'
             : change.isNew
                 ? 'create'
@@ -187,7 +194,7 @@ class OsmApiHelper {
         );
         if (idMap != null) idMap[el.id] = el;
         builder.element(action, nest: () {
-          el.toXML(builder, changeset: changeset, visible: !change.hardDeleted);
+          el.toXML(builder, changeset: changeset, visible: !change.isHardDeleted);
         });
       }
     });
@@ -195,8 +202,9 @@ class OsmApiHelper {
   }
 
   String _buildChangeset(Iterable<OsmChange> changes) {
-    final tags =
-        _ref.read(changesetTagsProvider).generateChangesetTags(changes);
+    final tags = _ref
+        .read(changesetTagsProvider.notifier)
+        .generateChangesetTags(changes);
     final builder = XmlBuilder();
     builder.processing('xml', 'version="1.0"');
     builder.element('osm', nest: () {
@@ -263,7 +271,7 @@ class OsmApiHelper {
       String changeset, Map<String, String> headers) async {
     final idMap = <OsmId, OsmElement>{};
     final resp = await http.post(
-      Uri.https(kOsmEndpoint, '/api/0.6/changeset/$changeset/upload'),
+      Uri.https(endpoint, '/api/0.6/changeset/$changeset/upload'),
       headers: headers,
       body: buildOsmChange(changes, changeset, idMap),
     );
@@ -281,7 +289,7 @@ class OsmApiHelper {
         newId: change.element?.id.ref,
         newVersion: change.element?.version,
       );
-      el.toXML(builder, changeset: changeset, visible: !change.hardDeleted);
+      el.toXML(builder, changeset: changeset, visible: !change.isHardDeleted);
     });
     return builder.buildDocument().toXmlString();
   }
@@ -293,7 +301,7 @@ class OsmApiHelper {
     for (final change in allChanges) {
       if (change.isNew) {
         final resp = await http.put(
-          Uri.https(kOsmEndpoint, '/api/0.6/node/create'),
+          Uri.https(endpoint, '/api/0.6/node/create'),
           headers: headers,
           body: _buildSingleChange(change, changeset),
         );
@@ -316,10 +324,10 @@ class OsmApiHelper {
             newVersion: 1,
           ));
         }
-      } else if (change.hardDeleted) {
+      } else if (change.isHardDeleted) {
         String objRef = change.id.fullRef;
         final resp = await http.delete(
-          Uri.https(kOsmEndpoint, '/api/0.6/$objRef'),
+          Uri.https(endpoint, '/api/0.6/$objRef'),
           headers: headers,
           body: _buildSingleChange(change, changeset),
         );
@@ -341,7 +349,7 @@ class OsmApiHelper {
       } else if (change.isModified) {
         String objRef = change.id.fullRef;
         final resp = await http.put(
-          Uri.https(kOsmEndpoint, '/api/0.6/$objRef'),
+          Uri.https(endpoint, '/api/0.6/$objRef'),
           headers: headers,
           body: _buildSingleChange(change, changeset),
         );
@@ -457,7 +465,7 @@ class OsmApiHelper {
   Future<String> _openChangeset(
       List<OsmChange> changes, Map<String, String> headers) async {
     final resp = await http.put(
-      Uri.https(kOsmEndpoint, '/api/0.6/changeset/create'),
+      Uri.https(endpoint, '/api/0.6/changeset/create'),
       headers: headers,
       body: _buildChangeset(changes),
     );
@@ -488,8 +496,8 @@ class OsmApiHelper {
     changes.sort();
 
     // Prepare authentication headers.
-    final auth = _ref.read(authProvider.notifier);
-    final headers = await auth.getAuthHeaders();
+    final auth = _ref.read(authProvider)['osm']!;
+    final headers = await auth.getAuthHeaders(null);
 
     // Open a changeset and get its id.
     final changeset = await _openChangeset(changes, headers);
@@ -510,7 +518,7 @@ class OsmApiHelper {
           clearErrored = false;
           // Update changeset comment for changes actually uploaded.
           await http.put(
-            Uri.https(kOsmEndpoint, '/api/0.6/changeset/$changeset'),
+            Uri.https(auth.endpoint, '/api/0.6/changeset/$changeset'),
             headers: headers,
             body: _buildChangeset(changes.where((c) => c.error == null)),
           );
@@ -526,7 +534,7 @@ class OsmApiHelper {
     } finally {
       // Close the changeset.
       await http.put(
-        Uri.https(kOsmEndpoint, '/api/0.6/changeset/$changeset/close'),
+        Uri.https(auth.endpoint, '/api/0.6/changeset/$changeset/close'),
         headers: headers,
       );
     }
@@ -537,8 +545,8 @@ class OsmApiHelper {
     if (changes.isEmpty) return 0;
 
     // Check whether we've authorized.
-    final auth = _ref.read(authProvider.notifier);
-    if (!auth.authorized) throw StateError('Log in first.');
+    final osmUser = _ref.read(authProvider.notifier).osmUser;
+    if (osmUser == null) throw StateError('Log in first.');
 
     // Set the mutex.
     if (_ref.read(apiStatusProvider) != ApiStatus.idle)

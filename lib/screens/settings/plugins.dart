@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/providers/plugin_manager.dart';
 import 'package:every_door/providers/plugin_repo.dart';
 import 'package:every_door/screens/settings/manage_plugin.dart';
@@ -25,12 +28,8 @@ class _PluginSettingsPageState extends ConsumerState<PluginSettingsPage> {
     Iterable<Widget> cards =
         plugins.where((p) => p.active).map((p) => PluginCard(
               plugin: p,
+              short: true,
               actionText: loc.pluginsDisable.toUpperCase(),
-              onAction: () {
-                ref
-                    .read(pluginManagerProvider.notifier)
-                    .setStateAndSave(p, false);
-              },
               onMore: () {
                 Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => ManagePluginPage(p),
@@ -49,9 +48,7 @@ class _PluginSettingsPageState extends ConsumerState<PluginSettingsPage> {
       ]).followedBy(inactive.map((p) => PluginCard(
             plugin: p,
             actionText: loc.pluginsEnable.toUpperCase(),
-            onAction: () {
-              ref.read(pluginManagerProvider.notifier).setStateAndSave(p, true);
-            },
+            short: true,
             onMore: () {
               Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => ManagePluginPage(p),

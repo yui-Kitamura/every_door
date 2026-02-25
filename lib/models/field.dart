@@ -1,5 +1,9 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:convert';
 
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:country_coder/country_coder.dart';
 import 'package:every_door/fields/address.dart';
 import 'package:every_door/fields/checkbox.dart';
@@ -10,6 +14,7 @@ import 'package:every_door/fields/floor.dart';
 import 'package:every_door/fields/height.dart';
 import 'package:every_door/fields/hours.dart';
 import 'package:every_door/fields/inline_combo.dart';
+import 'package:every_door/fields/many_combo.dart';
 import 'package:every_door/fields/name.dart';
 import 'package:every_door/fields/phone.dart';
 import 'package:every_door/fields/radio.dart';
@@ -24,6 +29,7 @@ import 'package:every_door/models/amenity.dart';
 /// Tag dependency definition. Basically a structure that defines
 /// which tags and which values should or should not be preset in a tag list.
 /// See https://github.com/ideditor/schema-builder/blob/main/README.md#prerequisitetag
+@Bind()
 class FieldPrerequisite {
   final String? key;
   final String? keyNot;
@@ -42,11 +48,13 @@ class FieldPrerequisite {
 
   factory FieldPrerequisite.fromJson(Map<String, dynamic> data) {
     final List<String> values = [];
-    if (data.containsKey('values')) values.addAll(data['values']);
+    if (data.containsKey('values'))
+      values.addAll(data['values']);
     else if (data.containsKey('value')) values.add(data['value']);
 
     final List<String> valuesNot = [];
-    if (data.containsKey('valuesNot')) valuesNot.addAll(data['valuesNot']);
+    if (data.containsKey('valuesNot'))
+      valuesNot.addAll(data['valuesNot']);
     else if (data.containsKey('valueNot')) valuesNot.add(data['valueNot']);
 
     return FieldPrerequisite(
@@ -60,6 +68,7 @@ class FieldPrerequisite {
 
 /// Field definition. Each field type needs to subclass this one.
 /// There are multiple examples in the `fields` directory.
+@Bind(bridge: true, wrap: true)
 abstract class PresetField {
   /// OSM tag key for this field. If the field does not use this
   /// attribute (or adds more keys, e.g. `contact:phone` for `phone`),
@@ -103,18 +112,34 @@ abstract class PresetField {
   bool hasRelevantKey(Map<String, String> tags) => tags.containsKey(key);
 }
 
-PresetField fieldFromJson(Map<String, dynamic> data,
-    {List<ComboOption> options = const []}) {
-  final String key = data['key'];
-  final String label =
-      data['loc_label'] ?? data['label'] ?? data['name'] ?? key;
-  final placeholder = data['loc_placeholder'] ?? data['placeholder'];
-  final prerequisite = data.containsKey('prerequisiteTag')
-      ? FieldPrerequisite.fromJson(data['prerequisiteTag'])
-      : null;
-  final locationSet = data['locations'] == null
-      ? null
-      : LocationSet.fromJson(jsonDecode(data['locations']));
+@Bind()
+class PresetFieldContext {
+  late final String key;
+  late final String label;
+  late final String? placeholder;
+  late final FieldPrerequisite? prerequisite;
+  late final LocationSet? locationSet;
+
+  PresetFieldContext(Map<String, dynamic> data) {
+    key = data['key'];
+    label = data['loc_label'] ?? data['label'] ?? data['name'] ?? key;
+    placeholder = data['loc_placeholder'] ?? data['placeholder'];
+    prerequisite = data.containsKey('prerequisiteTag')
+        ? FieldPrerequisite.fromJson(data['prerequisiteTag'])
+        : null;
+    locationSet = data['locations'] == null
+        ? null
+        : LocationSet.fromJson(jsonDecode(data['locations']));
+  }
+}
+
+PresetField? fieldForKey(Map<String, dynamic> data, List<ComboOption> options) {
+  final ctx = PresetFieldContext(data);
+  final String key = ctx.key;
+  final String label = ctx.label;
+  final placeholder = ctx.placeholder;
+  final prerequisite = ctx.prerequisite;
+  final locationSet = ctx.locationSet;
 
   // This switch should include at least every tag
   // from [PresetProvider.getStandardFields].
@@ -205,6 +230,18 @@ PresetField fieldFromJson(Map<String, dynamic> data,
     );
   }
 
+  return null;
+}
+
+PresetField fieldFromJson(Map<String, dynamic> data,
+    {List<ComboOption> options = const []}) {
+  final ctx = PresetFieldContext(data);
+  final String key = ctx.key;
+  final String label = ctx.label;
+  final placeholder = ctx.placeholder;
+  final prerequisite = ctx.prerequisite;
+  final locationSet = ctx.locationSet;
+
   const kTextLowercase = {
     'colour',
     'connectivity',
@@ -223,137 +260,33 @@ PresetField fieldFromJson(Map<String, dynamic> data,
         label: label, key: key, prerequisite: prerequisite);
   }
 
-  // List of types: https://github.com/ideditor/schema-builder#type
-  String typ = data['typ'] ?? 'text';
-  if (data['name'] == 'ref') typ = 'number'; // Patch some refs to be numbers
-  switch (typ) {
-    case 'text':
-    case 'colour': // TODO: remove when we have a colour picker
-    case 'date':
-    case 'textarea':
-      return TextPresetField(
-        key: key,
-        label: label,
-        placeholder: placeholder,
-        prerequisite: prerequisite,
-        locationSet: locationSet,
-        maxLines: typ == 'textarea' ? 4 : null,
-        capitalize: kTextLowercase.contains(key)
-            ? TextFieldCapitalize.no
-            : TextFieldCapitalize.sentence,
-      );
-    case 'number':
-    case 'roadspeed':
-      return TextPresetField(
-        key: key,
-        label: label,
-        placeholder: placeholder,
-        prerequisite: prerequisite,
-        locationSet: locationSet,
-        keyboardType: TextInputType.number,
-      );
-    case 'tel':
-      return PhonePresetField(
-        key: key,
-        label: label,
-        prerequisite: prerequisite,
-      );
-    case 'email':
-      return TextPresetField(
-        key: key,
-        label: label,
-        placeholder: placeholder,
-        prerequisite: prerequisite,
-        locationSet: locationSet,
-        keyboardType: TextInputType.emailAddress,
-      );
-    case 'url':
-      return TextPresetField(
-        key: key,
-        label: label,
-        placeholder: placeholder,
-        prerequisite: prerequisite,
-        locationSet: locationSet,
-        keyboardType: TextInputType.url,
-      );
-    case 'address':
-      return AddressField(
-        key: key,
-        label: label,
-      );
-    case 'combo':
-    case 'typeCombo':
-    case 'multiCombo':
-    case 'semiCombo':
-      return ComboPresetField(
-        key: key,
-        label: label,
-        prerequisite: prerequisite,
-        locationSet: locationSet,
-        customValues: data['custom_values'] == 1,
-        snakeCase: data['snake_case'] == 1,
-        type: kComboMapping[typ]!,
-        options: options,
-      );
-    case 'radio':
-      return RadioPresetField(
-        key: key,
-        label: label,
-        options: options.map((e) => e.value).toList(),
-        prerequisite: prerequisite,
-        locationSet: locationSet,
-      );
-    case 'check':
-    case 'defaultCheck':
-      return CheckboxPresetField(
-        key: key,
-        label: label,
-        tristate: typ == 'check',
-        options: options,
-        prerequisite: prerequisite,
-      );
-    case 'roadheight':
-      return HeightPresetField(
-        key: key,
-        label: label,
-        prerequisite: prerequisite,
-      );
-    case 'schedule':
-        return HoursPresetField(
-          key: key,
-          label: label,
-          prerequisite: prerequisite,
-        );
-    default:
-      return TextPresetField(
-        key: key,
-        label: label,
-        placeholder: placeholder,
-        prerequisite: prerequisite,
-        locationSet: locationSet,
-      );
+  bool parseBool(dynamic data, [bool def = true]) {
+    if (data is bool) return data;
+    if (data is num) return data == 1;
+    return def;
   }
-}
 
-PresetField fieldFromPlugin(Map<String, dynamic> data,
-    {List<ComboOption> options = const []}) {
-  final String key = data['key'];
-  final String label = data['label'] ?? data['name'] ?? key;
-  final String? placeholder = data['placeholder'];
-  final prerequisite = data.containsKey('prerequisiteTag')
-      ? FieldPrerequisite.fromJson(data['prerequisiteTag'])
-      : null;
-  final locationSet = data['locations'] == null
-      ? null
-      : LocationSet.fromJson(jsonDecode(data['locations']));
-
-  String typ = data['type'] ?? 'text';
+  // List of types: https://github.com/ideditor/schema-builder#type
+  String typ = data['typ'] ?? data['type'] ?? 'text';
   if (data['name'] == 'ref') typ = 'number'; // Patch some refs to be numbers
   switch (typ) {
     case 'text':
     case 'colour': // TODO: remove when we have a colour picker
     case 'date':
     case 'textarea':
+      TextFieldCapitalize capitalize = kTextLowercase.contains(key)
+          ? TextFieldCapitalize.no
+          : TextFieldCapitalize.sentence;
+      switch (data['capitalize']) {
+        case 'no':
+          capitalize = TextFieldCapitalize.no;
+        case 'sentence':
+          capitalize = TextFieldCapitalize.sentence;
+        case 'asName':
+          capitalize = TextFieldCapitalize.asName;
+        case 'all':
+          capitalize = TextFieldCapitalize.all;
+      }
       return TextPresetField(
         key: key,
         label: label,
@@ -361,8 +294,8 @@ PresetField fieldFromPlugin(Map<String, dynamic> data,
         prerequisite: prerequisite,
         locationSet: locationSet,
         maxLines: typ == 'textarea' ? 4 : null,
-        capitalize: TextFieldCapitalize.sentence,
-        showClearButton: (data['clearButton'] as bool?) ?? false,
+        capitalize: capitalize,
+        showClearButton: typ == 'colour' || parseBool(data['clearButton']),
       );
     case 'number':
     case 'roadspeed':
@@ -373,6 +306,7 @@ PresetField fieldFromPlugin(Map<String, dynamic> data,
         prerequisite: prerequisite,
         locationSet: locationSet,
         keyboardType: TextInputType.number,
+        showClearButton: true,
       );
     case 'tel':
       return PhonePresetField(
@@ -410,8 +344,8 @@ PresetField fieldFromPlugin(Map<String, dynamic> data,
         label: label,
         placeholder: placeholder,
         options: options,
-        customValues: (data['customValues'] as bool?) ?? false,
-        numeric: (data['numeric'] as bool?) ?? true,
+        customValues: parseBool(data['custom_values'] ?? data['customValues']),
+        numeric: parseBool(data['numeric'], true),
         // TODO: other things
       );
     case 'combo':
@@ -423,9 +357,17 @@ PresetField fieldFromPlugin(Map<String, dynamic> data,
         label: label,
         prerequisite: prerequisite,
         locationSet: locationSet,
-        customValues: (data['customValues'] as bool?) ?? false,
-        snakeCase: (data['snakeCase'] as bool?) ?? false,
+        customValues: parseBool(data['custom_values'] ?? data['customValues']),
+        snakeCase: parseBool(data['snake_case'] ?? data['snakeCase']),
         type: kComboMapping[typ]!,
+        options: options,
+      );
+    case 'manyCombo':
+      return ManyComboPresetField(
+        keys: key.split('\\'),
+        label: label,
+        prerequisite: prerequisite,
+        locationSet: locationSet,
         options: options,
       );
     case 'radio':
@@ -447,6 +389,12 @@ PresetField fieldFromPlugin(Map<String, dynamic> data,
       );
     case 'roadheight':
       return HeightPresetField(
+        key: key,
+        label: label,
+        prerequisite: prerequisite,
+      );
+    case 'schedule':
+      return HoursPresetField(
         key: key,
         label: label,
         prerequisite: prerequisite,

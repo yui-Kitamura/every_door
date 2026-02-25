@@ -1,12 +1,15 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/constants.dart';
 import 'package:every_door/helpers/geometry/equirectangular.dart';
 import 'package:every_door/models/osm_element.dart';
 import 'package:every_door/models/road_name.dart';
 import 'package:every_door/providers/changes.dart';
 import 'package:every_door/providers/database.dart';
+import 'package:fast_geohash/fast_geohash_str.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
-import 'package:proximity_hash/proximity_hash.dart';
 import 'dart:math' show max;
 
 final roadNameProvider = Provider((ref) => RoadNameProvider(ref));
@@ -78,7 +81,7 @@ class RoadNameProvider {
   Future<Map<String, double>> _getNamesFromAddresses(
       LatLng location, double radius) async {
     final database = await _ref.read(databaseProvider).database;
-    final hashes = createGeohashes(location.latitude, location.longitude,
+    final hashes = geohash.forCircle(location.latitude, location.longitude,
         radius.toDouble(), kGeohashPrecision);
     final placeholders = List.generate(hashes.length, (index) => "?").join(",");
     final rows = await database.query(
@@ -114,7 +117,7 @@ class RoadNameProvider {
   Future<Map<String, double>> _getNamesFromRoads(
       LatLng location, double radius) async {
     final database = await _ref.read(databaseProvider).database;
-    final hashes = createGeohashes(location.latitude, location.longitude,
+    final hashes = geohash.forCircle(location.latitude, location.longitude,
         radius.toDouble(), kRoadNameGeohashPrecision);
     final placeholders = List.generate(hashes.length, (index) => "?").join(",");
     final rows = await database.query(

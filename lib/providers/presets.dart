@@ -1,7 +1,9 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:country_coder/country_coder.dart';
 import 'package:every_door/constants.dart';
 import 'package:every_door/fields/combo.dart';
-import 'package:every_door/fields/name.dart';
 import 'package:every_door/fields/payment.dart';
 import 'package:every_door/fields/room.dart';
 import 'package:every_door/fields/text.dart';
@@ -9,10 +11,11 @@ import 'package:every_door/fields/wifi.dart';
 import 'package:every_door/helpers/tags/element_kind.dart';
 import 'package:every_door/helpers/normalizer.dart';
 import 'package:every_door/models/field.dart';
-import 'package:every_door/helpers/nsi_features.dart';
+import 'package:every_door/helpers/nsi_features.g.dart';
 import 'package:every_door/providers/add_presets.dart';
 import 'package:every_door/providers/database.dart';
 import 'package:every_door/providers/osm_data.dart';
+import 'package:every_door/providers/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,7 +27,6 @@ import 'dart:convert' show JsonDecoder, jsonDecode;
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:latlong2/latlong.dart';
 
 final presetProvider = Provider((ref) => PresetProvider(ref));
@@ -57,7 +59,7 @@ class PresetProvider {
   Future<void> initDatabase() async {
     final appDir = await getApplicationDocumentsDirectory();
     final dbFile = io.File(path.join(appDir.path, 'presets.db'));
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = _ref.read(sharedPrefsProvider).requireValue;
 
     var needCopy = true;
     if (!kOverwritePresets || !kDebugMode) {
@@ -528,7 +530,8 @@ class PresetProvider {
     if (preset.type == PresetType.taginfo) {
       final fields = <String>[];
       if (ElementKind.amenity.matchesTags(preset.addTags)) {
-        fields.addAll(['name', 'operator', 'opening_hours', 'phone', 'website']);
+        fields
+            .addAll(['name', 'operator', 'opening_hours', 'phone', 'website']);
       } else {
         fields.addAll(['name', 'operator', 'material', 'height', 'direction']);
       }
@@ -552,16 +555,16 @@ class PresetProvider {
     final sql = '''
     with $langCTE
     , pfields as (
-      select field, required, pos
+      select field, required, pos, 0 as universal
       from preset_fields where preset_name = ?
       union all
-      select name as field, 0, 100
+      select name as field, 0, 100, 1
       from fields where universal = 1
     )
     select f.*, t.label as loc_label,
       t.placeholder as loc_placeholder,
       t.options as loc_options,
-      pf.pos, pf.required,
+      pf.pos, pf.required, pf.universal,
       lscore
     from pfields pf
     inner join fields f on f.name = pf.field
@@ -573,6 +576,7 @@ class PresetProvider {
     if (results.isEmpty) return preset;
     List<PresetField> fields = [];
     List<PresetField> moreFields = [];
+    List<PresetField> universalFields = [];
     final seenFields = <String>{};
     for (final row in results) {
       final name = row['name'] as String;
@@ -586,7 +590,8 @@ class PresetProvider {
         field = _fieldCache[name]!;
       } else {
         final options = await _getComboOptions(row);
-        field = fieldFromJson(row, options: options);
+        field =
+            fieldForKey(row, options) ?? fieldFromJson(row, options: options);
         _fieldCache[name] = field;
       }
 
@@ -600,11 +605,14 @@ class PresetProvider {
       // query options if needed
       if (row['required'] == 1) {
         fields.add(field);
+      } else if (row['universal'] == 1) {
+        universalFields.add(field);
       } else {
         moreFields.add(field);
       }
     }
-    return preset.withFields(fields, moreFields);
+    sortFields(universalFields);
+    return preset.withFields(fields, moreFields + universalFields);
   }
 
   Future<String?> _getFieldLabel(String fieldName, Locale locale) async {
@@ -672,7 +680,8 @@ class PresetProvider {
         field = _fieldCache[name]!;
       } else {
         final options = await _getComboOptions(row);
-        field = fieldFromJson(row, options: options);
+        field =
+            fieldForKey(row, options) ?? fieldFromJson(row, options: options);
         _fieldCache[name] = field;
       }
 
@@ -721,6 +730,33 @@ class PresetProvider {
     final result = fields[fieldName];
     if (result == null) throw ArgumentError('Missing field $fieldName');
     return result;
+  }
+
+  static final _kPreferredFields = [
+    'website',
+    'description',
+    'fixme',
+    'note',
+    'start_date',
+    'short_name',
+    'loc_name',
+    'alt_name',
+    'reg_name',
+    'official_name',
+    'nat_name',
+    'name',
+    'wikimedia_commons',
+    'panoramax',
+    'mapillary',
+    'image',
+    'ele',
+    'ref:linz:place_id',
+  ].asMap().map((i, key) => MapEntry(key, i));
+
+  void sortFields(List<PresetField> fields) {
+    mergeSort(fields,
+        compare: (a, b) => (_kPreferredFields[a.key] ?? 100)
+            .compareTo(_kPreferredFields[b.key] ?? 100));
   }
 
   void clearFieldCache() {

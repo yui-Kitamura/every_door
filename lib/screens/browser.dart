@@ -1,7 +1,12 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/providers/editor_mode.dart';
 import 'package:every_door/providers/geolocation.dart';
 import 'package:every_door/screens/modes/amenity.dart';
+import 'package:every_door/screens/modes/classic.dart';
 import 'package:every_door/screens/modes/definitions/amenity.dart';
+import 'package:every_door/screens/modes/definitions/classic.dart';
 import 'package:every_door/screens/modes/definitions/entrances.dart';
 import 'package:every_door/screens/modes/definitions/micro.dart';
 import 'package:every_door/screens/modes/definitions/notes.dart';
@@ -30,7 +35,7 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
     } else if (!ref.read(trackingProvider) &&
         ref.read(geolocationProvider) != null) {
       if (updateProviders) {
-        ref.read(trackingProvider.notifier).state = true;
+        ref.read(trackingProvider.notifier).enable();
       }
       return false;
     } else {
@@ -66,6 +71,8 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
       editorPanel = EntrancesPane(editorMode);
     } else if (editorMode is NotesModeDefinition) {
       editorPanel = NotesPane(editorMode);
+    } else if (editorMode is ClassicModeDefinition) {
+      editorPanel = ClassicModePane(editorMode);
     } else {
       editorPanel = Center(child: Text('Broken mode definition'));
     }

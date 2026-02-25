@@ -1,6 +1,10 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/helpers/draw_style.dart';
 import 'package:every_door/helpers/geometry/geometry.dart';
 import 'package:every_door/helpers/multi_icon.dart';
+import 'package:every_door/models/located.dart';
 import 'package:every_door/models/note.dart';
 import 'package:every_door/providers/editor_settings.dart';
 import 'package:every_door/providers/geolocation.dart';
@@ -8,7 +12,6 @@ import 'package:every_door/providers/location.dart';
 import 'package:every_door/providers/note_state.dart';
 import 'package:every_door/providers/notes.dart';
 import 'package:every_door/screens/editor/map_chooser.dart';
-import 'package:every_door/screens/editor/note.dart';
 import 'package:every_door/screens/modes/definitions/notes.dart';
 import 'package:every_door/widgets/area_status.dart';
 import 'package:every_door/widgets/map.dart';
@@ -21,7 +24,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
-import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
+import 'package:every_door/generated/l10n/app_localizations.dart'
+    show AppLocalizations;
 
 class NotesPane extends ConsumerStatefulWidget {
   final NotesModeDefinition def;
@@ -43,10 +47,18 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
       updateNotes();
       // Disable location tracking.
-      ref.read(trackingProvider.notifier).state = false;
+      ref.read(trackingProvider.notifier).disable();
       // Load the note state
       ref.read(noteIsOsmProvider);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant NotesPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Resubscribe, as per this method documentation.
+    oldWidget.def.removeListener(onDefChange);
+    widget.def.addListener(onDefChange);
   }
 
   @override
@@ -61,41 +73,21 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
 
   void recordMapMove(MapCamera camera) {
     ref.read(effectiveLocationProvider.notifier).set(camera.center);
-    ref.read(zoomProvider.notifier).state = camera.zoom;
+    ref.read(zoomProvider.notifier).update(camera.zoom);
+    ref.read(visibleBoundsProvider.notifier).update(camera.visibleBounds);
   }
 
-  void updateNotes() {
-    widget.def.updateNearest();
+  void updateNotes() async {
+    final bounds = ref.read(visibleBoundsProvider);
+    if (bounds == null) return;
+    await widget.def.updateNearest(bounds);
   }
 
-  Future<void> _openNoteEditor(BaseNote? note, [LatLng? location]) async {
-    if (note is MapDrawing) return;
-
-    if (location != null) {
-      setState(() {
-        _newLocation = location;
-      });
-    }
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      enableDrag: false,
-      builder: (context) => NoteEditorPane(
-        note: note,
-        location:
-            location ?? note?.location ?? ref.read(effectiveLocationProvider),
-      ),
-    );
-    setState(() {
-      _newLocation = null;
-    });
-  }
-
-  List<BaseNote> findClosestNotes(
+  List<Located> findClosestNotes(
       LatLng location, double Function(LatLng) distance) {
     const kMaxTapDistance = 30;
     final camera = _controller.mapController!.camera;
-    final closestNotes = widget.def.notes
+    final closestNotes = widget.def.nearest
         .where((note) => camera.visibleBounds.contains(note.location))
         .where((note) => distance(note.location) <= kMaxTapDistance)
         .toList();
@@ -113,10 +105,10 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
     final locked = ref.watch(drawingLockedProvider);
     final loc = AppLocalizations.of(context)!;
 
-    ref.listen(effectiveLocationProvider, (_, LatLng next) {
+    ref.listen(notesProvider, (_, next) {
       updateNotes();
     });
-    ref.listen(notesProvider, (_, next) {
+    ref.listen(visibleBoundsProvider, (_, next) {
       updateNotes();
     });
 
@@ -134,7 +126,8 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                         for (final note in notes) {
                           if (note is OsmNote ||
                               (note is MapNote && note.isNew)) {
-                            _openNoteEditor(note);
+                            widget.def
+                                .openEditor(context: context, element: note);
                             break;
                           }
                         }
@@ -146,11 +139,12 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                 hasFloatingButton: true,
                 updateState: true,
                 layers: [
+                  ...widget.def.overlays.map((i) => i.buildLayer()),
                   ...widget.def.mapLayers(),
                   PolylineLayer(
                     polylines: [
                       for (final drawing
-                          in widget.def.notes.whereType<MapDrawing>())
+                          in widget.def.nearest.whereType<MapDrawing>())
                         Polyline(
                           points: drawing.path.nodes,
                           color: drawing.style.color,
@@ -164,17 +158,19 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                     ],
                   ),
                   CircleLayer(circles: [
-                    for (final osmNote in widget.def.notes.whereType<OsmNote>())
+                    for (final osmNote
+                        in widget.def.nearest.whereType<OsmNote>())
                       CircleMarker(
                         point: osmNote.location,
                         radius: 15.0,
-                        color: osmNote.isChanged
+                        color: osmNote.isModified
                             ? Colors.yellow.withValues(alpha: 0.8)
                             : Colors.white.withValues(alpha: 0.8),
                         borderColor: Colors.black,
                         borderStrokeWidth: 1.0,
                       ),
-                    for (final mapNote in widget.def.notes.whereType<MapNote>())
+                    for (final mapNote
+                        in widget.def.nearest.whereType<MapNote>())
                       CircleMarker(
                         point: mapNote.location,
                         radius: 6.0,
@@ -186,7 +182,7 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                   MarkerLayer(
                     markers: [
                       for (final mapNote
-                          in widget.def.notes.whereType<MapNote>())
+                          in widget.def.nearest.whereType<MapNote>())
                         Marker(
                           point: mapNote.location,
                           rotate: true,
@@ -226,6 +222,7 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                       ],
                     ),
                 ],
+                buttons: widget.def.buttons.toList(),
               ),
               if (locked)
                 OverlayButtonWidget(
@@ -236,10 +233,10 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                     horizontal: 8.0,
                     vertical: 24.0,
                   ),
-                  onPressed: () {
+                  onPressed: (_) {
                     ref.read(drawingLockedProvider.notifier).state = false;
                   },
-                  icon: kStyleIcons[currentTool] ?? Icons.lock_open,
+                  icon: currentTool.icon,
                 ),
               if (!locked && _controller.mapController != null) ...[
                 PainterWidget(
@@ -247,19 +244,19 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                   onDrawn: (coords) {
                     if (currentTool == kToolEraser) {
                       final line = LineString(coords);
-                      final crossing = widget.def.notes
+                      final crossing = widget.def.nearest
                           .whereType<MapDrawing>()
                           .where((note) => line.intersects(note.path));
-                      ref.read(notesProvider).deleteDrawings(crossing);
+                      ref.read(notesProvider.notifier).deleteDrawings(crossing);
                     } else {
                       final note = MapDrawing(
                         path: LineString(coords),
-                        pathType: currentTool,
+                        style: currentTool,
                       );
                       setState(() {
-                        widget.def.notes.add(note);
+                        widget.def.nearest.add(note);
                       });
-                      ref.read(notesProvider).saveNote(note);
+                      ref.read(notesProvider.notifier).saveNote(note);
                     }
                   },
                   onTap: (location) {
@@ -280,13 +277,13 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                           (note is MapNote &&
                               note.isNew &&
                               currentTool != kToolEraser)) {
-                        _openNoteEditor(note);
+                        widget.def.openEditor(context: context, element: note);
                         found = true;
                         break;
                       } else if (note is MapNote &&
                           currentTool == kToolEraser) {
                         // Tapping on a note in eraser mode deletes it.
-                        ref.read(notesProvider).deleteNote(note);
+                        ref.read(notesProvider.notifier).deleteNote(note);
                         found = true;
                         break;
                       }
@@ -296,7 +293,7 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                       double minDistance = double.infinity;
                       MapDrawing? closest;
                       for (final note
-                          in widget.def.notes.whereType<MapDrawing>()) {
+                          in widget.def.nearest.whereType<MapDrawing>()) {
                         if (note.path.bounds.contains(location)) {
                           final closestPoint = note.path.closestPoint(location);
                           final distance = distanceToLocation(closestPoint);
@@ -307,7 +304,7 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                         }
                       }
                       if (closest != null) {
-                        ref.read(notesProvider).deleteNote(closest);
+                        ref.read(notesProvider.notifier).deleteNote(closest);
                       }
                     }
                   },
@@ -315,11 +312,11 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                     recordMapMove(_controller.mapController!.camera);
                     updateNotes();
                   },
-                  style:
-                      kTypeStyles[currentTool] ?? kTypeStyles[kToolScribble]!,
+                  style: currentTool,
                 ),
                 StyleChooserButton(
                   style: currentTool,
+                  palette: widget.def.palette,
                   alignment:
                       leftHand ? Alignment.bottomRight : Alignment.bottomLeft,
                   onChange: (newStyle) {
@@ -332,12 +329,12 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                     ref.read(drawingLockedProvider.notifier).state = true;
                   },
                 ),
-                if (!ref.watch(notesProvider).undoIsEmpty)
+                if (!ref.watch(notesProvider.notifier).undoIsEmpty)
                   UndoButton(
                     alignment:
                         leftHand ? Alignment.bottomRight : Alignment.bottomLeft,
                     onTap: () {
-                      ref.read(notesProvider).undoChange();
+                      ref.read(notesProvider.notifier).undoChange();
                     },
                   ),
               ],
@@ -350,7 +347,7 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                 alignment:
                     leftHand ? Alignment.bottomLeft : Alignment.bottomRight,
                 onDragEnd: (pos) {
-                  _openNoteEditor(null, pos);
+                  widget.def.openEditor(context: context, location: pos);
                 },
                 onTap: () async {
                   final location = ref.read(effectiveLocationProvider);
@@ -360,7 +357,9 @@ class _NotesPaneState extends ConsumerState<NotesPane> {
                       builder: (context) => MapChooserPage(location: location),
                     ),
                   );
-                  if (pos != null) _openNoteEditor(null, pos);
+                  if (pos != null && context.mounted) {
+                    widget.def.openEditor(context: context, location: pos);
+                  }
                 },
               ),
               ApiStatusPane(),

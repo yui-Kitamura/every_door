@@ -1,10 +1,13 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/constants.dart';
 import 'package:every_door/helpers/geometry/geometry.dart';
 import 'package:every_door/models/note.dart';
 import 'package:every_door/models/osm_element.dart';
 import 'package:every_door/models/road_name.dart';
+import 'package:fast_geohash/fast_geohash_str.dart';
 import 'package:logging/logging.dart';
-import 'package:proximity_hash/geohash.dart';
 import 'dart:convert';
 import 'package:xml/xml.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
@@ -74,7 +77,9 @@ class UploadedElement {
 /// Converts an XML stream from the `map` call of OSM API and returns
 /// a list of raw `OsmElement` objects.
 class XmlToOsmConverter extends Converter<List<XmlNode>, List<OsmElement>> {
-  const XmlToOsmConverter();
+  final String source;
+
+  const XmlToOsmConverter(this.source);
 
   @override
   List<OsmElement> convert(List<XmlNode> input) {
@@ -125,6 +130,7 @@ class XmlToOsmConverter extends Converter<List<XmlNode>, List<OsmElement>> {
           }
         }
         result.add(OsmElement(
+          source: source,
           id: OsmId(type, int.parse(node.getAttribute("id")!)),
           version: int.parse(node.getAttribute("version")!),
           timestamp: DateTime.parse(node.getAttribute("timestamp")!),
@@ -141,15 +147,17 @@ class XmlToOsmConverter extends Converter<List<XmlNode>, List<OsmElement>> {
 
   @override
   Sink<List<XmlNode>> startChunkedConversion(Sink<List<OsmElement>> sink) {
-    return XmlToOsmSink(sink);
+    return XmlToOsmSink(sink, source);
   }
 }
 
 class XmlToOsmSink implements ChunkedConversionSink<List<XmlNode>> {
   final XmlToOsmConverter _converter;
   final Sink<List<OsmElement>> _sink;
+  final String source;
 
-  XmlToOsmSink(this._sink) : _converter = const XmlToOsmConverter();
+  XmlToOsmSink(this._sink, this.source)
+      : _converter = XmlToOsmConverter(source);
 
   @override
   void add(List<XmlNode> chunk) {
@@ -486,8 +494,16 @@ class CollectGeometrySink implements ChunkedConversionSink<List<OsmElement>> {
 class ExtractRoadNames extends Converter<List<OsmElement>, List<OsmElement>> {
   /// List of highway=* values that can denote a named road.
   static const kHighwayRoadValues = <String>{
-    'service', 'residential', 'pedestrian', 'unclassified', 'tertiary',
-    'secondary', 'primary', 'trunk', 'motorway', 'living_street',
+    'service',
+    'residential',
+    'pedestrian',
+    'unclassified',
+    'tertiary',
+    'secondary',
+    'primary',
+    'trunk',
+    'motorway',
+    'living_street',
   };
 
   final Set<RoadNameRecord>? _names;
@@ -512,8 +528,7 @@ class ExtractRoadNames extends Converter<List<OsmElement>, List<OsmElement>> {
         // Convert to hashes and store.
         final hashes = <String>{
           for (final c in coords)
-            GeoHasher().encode(c.longitude, c.latitude,
-                precision: kRoadNameGeohashPrecision)
+            geohash.encode(c.latitude, c.longitude, kRoadNameGeohashPrecision)
         };
         _names.addAll(
             hashes.map((h) => RoadNameRecord(element.tags['name']!, h)));

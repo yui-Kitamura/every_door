@@ -1,7 +1,12 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:async';
 import 'dart:io';
 
+import 'package:every_door/helpers/plugin_code.dart';
 import 'package:every_door/models/plugin.dart';
+import 'package:every_door/plugins/_construction.dart';
 import 'package:every_door/providers/plugin_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -38,16 +43,18 @@ class PluginRepository extends Notifier<List<Plugin>> {
       if (entry is Directory) {
         try {
           final metadata = await readPluginData(entry);
-          plugins.add(Plugin.fromData(metadata, entry));
+          plugins.add(Plugin.fromData(metadata, entry,
+              instanceBuilder: PluginCode.instantiatePlugin));
         } on PluginLoadException catch (e) {
           _logger.severe('Failed to load plugin metadata', e);
         }
       }
     }
 
-    _installFromAssets();
-
     state = plugins;
+
+    _installFromAssets();
+    _installConstruction();
   }
 
   Future<void> deletePlugin(String id) async {
@@ -86,6 +93,28 @@ class PluginRepository extends Notifier<List<Plugin>> {
         // it's fine if we leave it.
       }
     }
+  }
+
+  Future<void> _installConstruction() async {
+    if (!PluginUnderConstruction.kEnabled) return;
+    // So that the state is initialized.
+    await Future.delayed(Duration(milliseconds: 500));
+
+    final data = PluginUnderConstruction.getMetadata();
+    final pluginDir = _getPluginDirectory(data['id']);
+    final plugin = Plugin(
+      id: data['id'],
+      data: data,
+      directory: pluginDir,
+      instanceBuilder: (_) async => PluginUnderConstruction(),
+    );
+
+    await deletePlugin(data['id']);
+    state = state.followedBy([plugin]).toList();
+
+    await ref
+        .read(pluginManagerProvider.notifier)
+        .setStateAndSave(plugin, true);
   }
 
   Directory _getPluginDirectory(String id) {
@@ -177,7 +206,8 @@ class PluginRepository extends Notifier<List<Plugin>> {
       await tmpPluginDir.rename(pluginDir.path);
 
       final data = await readPluginData(pluginDir);
-      final plugin = Plugin.fromData(data, pluginDir);
+      final plugin = Plugin.fromData(data, pluginDir,
+          instanceBuilder: PluginCode.instantiatePlugin);
 
       // Add the plugin record to the list.
       state = state.followedBy([plugin]).toList();

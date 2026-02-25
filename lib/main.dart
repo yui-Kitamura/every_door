@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:async';
 import 'dart:io';
 
@@ -29,7 +32,7 @@ void main() {
       logStore.addFromFlutter(details);
     };
     ElementKind.reset();
-    runApp(ProviderScope(child: const EveryDoorApp()));
+    runApp(ProviderScope(child: const EveryDoorMainApp()));
   }, (error, stack) {
     logStore.addFromZone(error, stack);
   });
@@ -42,8 +45,8 @@ Future<void> installCertificate() async {
       .setTrustedCertificatesBytes(data.buffer.asUint8List());
 }
 
-class EveryDoorApp extends ConsumerWidget {
-  const EveryDoorApp({super.key});
+class EveryDoorMainApp extends ConsumerWidget {
+  const EveryDoorMainApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

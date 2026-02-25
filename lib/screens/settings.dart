@@ -1,12 +1,16 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/constants.dart';
 import 'package:every_door/providers/changes.dart';
 import 'package:every_door/providers/changeset_tags.dart';
 import 'package:every_door/providers/editor_settings.dart';
 import 'package:every_door/providers/geolocation.dart';
 import 'package:every_door/providers/notes.dart';
-import 'package:every_door/providers/osm_auth.dart';
+import 'package:every_door/providers/auth.dart';
 import 'package:every_door/screens/settings/about.dart';
 import 'package:every_door/screens/settings/account.dart';
+import 'package:every_door/screens/settings/account_list.dart';
 import 'package:every_door/screens/settings/caches.dart';
 import 'package:every_door/screens/settings/changes.dart';
 import 'package:every_door/screens/settings/changeset_pane.dart';
@@ -17,21 +21,22 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:settings_ui/settings_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
+import 'package:every_door/generated/l10n/app_localizations.dart'
+    show AppLocalizations;
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final login = ref.watch(authProvider)?.displayName;
+    final login = ref.watch(authProvider)['osm']!.value?.displayName;
     final editorSettings = ref.watch(editorSettingsProvider);
     final forceLocation = ref.watch(forceLocationProvider);
-    final hashtags = ref.watch(changesetTagsProvider).getHashtags();
+    final hashtags = ref.watch(changesetTagsProvider.notifier).getHashtags();
     final loc = AppLocalizations.of(context)!;
 
     final haveChanges = ref.watch(changesProvider).length > 0;
-    final haveNotes = ref.watch(notesProvider).haveChanges;
+    final haveNotes = ref.watch(notesProvider) > 0;
 
     return Scaffold(
       appBar: AppBar(title: Text(loc.settingsTitle)),
@@ -51,7 +56,10 @@ class SettingsPage extends ConsumerWidget {
                     Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (context) => OsmAccountPage()));
+                            builder: (context) =>
+                                ref.watch(authProvider).length > 1
+                                    ? AccountListPage()
+                                    : AccountPage('osm')));
                   },
                 ),
                 SettingsTile(
@@ -73,8 +81,9 @@ class SettingsPage extends ConsumerWidget {
                 SettingsTile(
                   title: Text(loc.settingsUploads),
                   enabled: haveChanges || haveNotes,
-                  trailing:
-                      haveChanges || haveNotes ? Icon(Icons.navigate_next) : null,
+                  trailing: haveChanges || haveNotes
+                      ? Icon(Icons.navigate_next)
+                      : null,
                   onPressed: (context) {
                     Navigator.push(
                       context,
@@ -110,7 +119,9 @@ class SettingsPage extends ConsumerWidget {
                 SettingsTile.switchTile(
                   title: Text(loc.settingsLeftHand),
                   onToggle: (value) {
-                    ref.read(editorSettingsProvider.notifier).setLeftHand(value);
+                    ref
+                        .read(editorSettingsProvider.notifier)
+                        .setLeftHand(value);
                   },
                   initialValue: editorSettings.leftHand,
                 ),
@@ -132,12 +143,11 @@ class SettingsPage extends ConsumerWidget {
                   trailing: Icon(Icons.navigate_next),
                   onPressed: (context) {
                     Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PluginSettingsPage(),
-                        settings: RouteSettings(name: 'settings'),
-                      )
-                    );
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PluginSettingsPage(),
+                          settings: RouteSettings(name: 'settings'),
+                        ));
                   },
                 ),
               ],

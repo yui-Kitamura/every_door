@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/helpers/tags/element_kind.dart';
 import 'package:every_door/helpers/tags/main_key.dart';
 import 'package:every_door/helpers/multi_icon.dart';
@@ -422,12 +425,14 @@ class _EverythingKind extends ElementKindImpl {
 
   static const _kAnyKeys = {'addr:housenumber', 'addr:housename', 'building'};
 
+  /// Overridden to support any object with addresses or any building.
   @override
   bool matchesTags(Map<String, String> tags) {
     if (_kAnyKeys.any((k) => tags.containsKey(k))) return true;
     return super.matchesTags(tags);
   }
 
+  /// Overridden to support any object with addresses or any building.
   @override
   bool matchesChange(OsmChange change) {
     if (_kAnyKeys.any((k) => change[k] != null)) return true;

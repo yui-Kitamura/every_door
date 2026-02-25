@@ -1,3 +1,7 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:every_door/constants.dart';
 import 'package:every_door/models/amenity.dart';
 import 'package:every_door/providers/editor_settings.dart';
@@ -7,8 +11,10 @@ import 'package:every_door/models/field.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
 
+@Bind()
 enum TextFieldCapitalize { no, asName, sentence, all }
 
+@Bind()
 class TextPresetField extends PresetField {
   final TextInputType keyboardType;
   final TextFieldCapitalize capitalize;
@@ -125,7 +131,12 @@ class _TextInputFieldState extends ConsumerState<TextInputField> {
         onChanged: (value) {
           // On every keypress, since the focus can change at any minute.
           setState(() {
-            widget.element[widget.field.key] = value.trim();
+            String v = value.trim();
+            if (widget.field.capitalize == TextFieldCapitalize.no) {
+              // Enforce lower case, because we set no caps for a reason.
+              v = v.toLowerCase();
+            }
+            widget.element[widget.field.key] = v;
           });
         },
       ),

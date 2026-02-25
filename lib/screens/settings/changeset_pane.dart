@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/constants.dart';
 import 'package:every_door/providers/changeset_tags.dart';
 import 'package:every_door/providers/editor_settings.dart';
@@ -20,12 +23,12 @@ class _ChangesetPaneState extends ConsumerState<ConsumerStatefulWidget> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: ref
-        .read(changesetTagsProvider)
+        .read(changesetTagsProvider.notifier)
         .getHashtags(clearHashes: true));
   }
 
   void _saveHashtags(String value) {
-    ref.read(changesetTagsProvider).saveHashtags(value);
+    ref.read(changesetTagsProvider.notifier).saveHashtags(value);
   }
 
   @override

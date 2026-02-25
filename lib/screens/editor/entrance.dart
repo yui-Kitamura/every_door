@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:adaptive_dialog/adaptive_dialog.dart';
 import 'package:every_door/constants.dart';
 import 'package:every_door/models/address.dart';
@@ -51,7 +54,8 @@ class _EntranceEditorPaneState extends ConsumerState<EntranceEditorPane> {
       final tags =
           ref.read(lastPresetsProvider).getTagsForPreset(kEntrancePreset) ??
               kEntrancePreset.addTags;
-      entrance = OsmChange.create(tags: tags, location: widget.location);
+      entrance = OsmChange.create(
+          tags: tags, location: widget.location, source: 'osm');
     }
 
     if (entrance['building'] == 'entrance') {

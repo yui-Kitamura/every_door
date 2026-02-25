@@ -1,5 +1,9 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:io';
 
+import 'package:eval_annotation/eval_annotation.dart';
 import 'package:every_door/helpers/yaml_map.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
@@ -9,6 +13,7 @@ import 'package:yaml/yaml.dart';
 /// only small parts of the metadata tree. For example, a tree preset
 /// would need "preset.tree" branch for translations. This class allows
 /// to hide the context.
+@Bind()
 class PluginLocalizationsBranch {
   final PluginLocalizations _localizations;
   final String _prefix;

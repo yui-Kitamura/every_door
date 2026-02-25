@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:async';
 import 'dart:collection';
 
@@ -19,6 +22,7 @@ import 'package:every_door/providers/changes.dart';
 import 'package:every_door/providers/database.dart';
 import 'package:every_door/providers/osm_api.dart';
 import 'package:every_door/providers/road_names.dart';
+import 'package:fast_geohash/fast_geohash_str.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' show LatLngBounds;
 import 'package:every_door/constants.dart';
@@ -27,7 +31,6 @@ import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:logging/logging.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:proximity_hash/proximity_hash.dart';
 import 'package:sqflite/utils/utils.dart';
 
 final osmDataProvider = ChangeNotifierProvider((ref) => OsmDataHelper(ref));
@@ -128,7 +131,13 @@ class OsmDataHelper extends ChangeNotifier {
       }
       await batch.commit(noResult: true);
     });
-    if (bounds != null) await _ref.read(downloadedAreaProvider).addArea(bounds);
+
+    if (bounds != null) {
+      await _ref
+          .read(downloadedAreaProvider)
+          .addArea(bounds, elements.first.source);
+    }
+
     await _updateLength();
     _updateCapitalizeNames();
     updateFloorNumbering();
@@ -139,7 +148,7 @@ class OsmDataHelper extends ChangeNotifier {
     final changes = _ref.read(changesProvider);
     final result = elements
         .map((e) => changes.changeFor(e))
-        .where((change) => !change.deleted)
+        .where((change) => !change.isDeleted)
         .toList();
     if (addNew) result.addAll(changes.getNew());
     return result;
@@ -159,8 +168,15 @@ class OsmDataHelper extends ChangeNotifier {
 
   /// Restores objects from the database.
   Future<List<OsmChange>> getElements(LatLng center, int radius) async {
-    final hashes = createGeohashes(center.latitude, center.longitude,
+    final hashes = geohash.forCircle(center.latitude, center.longitude,
         radius.toDouble(), kGeohashPrecision);
+    return await _queryElements(hashes);
+  }
+
+  /// Restores objects from the database.
+  Future<List<OsmChange>> getElementsInBox(LatLngBounds bounds) async {
+    final hashes = geohash.forBounds(bounds.south, bounds.west, bounds.north,
+        bounds.east, kGeohashPrecision);
     return await _queryElements(hashes);
   }
 
@@ -188,7 +204,7 @@ class OsmDataHelper extends ChangeNotifier {
   Future<List<OsmElement>> _getAddressedElementsAround(LatLng location,
       {int radius = kVisibilityRadius}) async {
     final database = await _ref.read(databaseProvider).database;
-    final hashes = createGeohashes(location.latitude, location.longitude,
+    final hashes = geohash.forCircle(location.latitude, location.longitude,
         radius.toDouble(), kGeohashPrecision);
     final placeholders = List.generate(hashes.length, (index) => "?").join(",");
     final rows = await database.query(
@@ -324,7 +340,7 @@ class OsmDataHelper extends ChangeNotifier {
     final database = await _ref.read(databaseProvider).database;
     final hashes = location == null
         ? const []
-        : createGeohashes(location.latitude, location.longitude,
+        : geohash.forCircle(location.latitude, location.longitude,
             kLocalFloorsRadius.toDouble(), kGeohashPrecision);
     final placeholders = List.generate(hashes.length, (index) => "?").join(",");
     final rows = await database.query(
@@ -378,7 +394,7 @@ class OsmDataHelper extends ChangeNotifier {
   Future<List<Floor>> getFloorsAround(LatLng location,
       [StreetAddress? address]) async {
     final database = await _ref.read(databaseProvider).database;
-    final hashes = createGeohashes(location.latitude, location.longitude,
+    final hashes = geohash.forCircle(location.latitude, location.longitude,
         kVisibilityRadius.toDouble(), kGeohashPrecision);
     final placeholders = List.generate(hashes.length, (index) => "?").join(",");
     final rows = await database.query(
@@ -416,7 +432,7 @@ class OsmDataHelper extends ChangeNotifier {
   Future<List<String>> getOpeningHoursAround(LatLng location,
       {int limit = 10}) async {
     final database = await _ref.read(databaseProvider).database;
-    final hashes = createGeohashes(location.latitude, location.longitude,
+    final hashes = geohash.forCircle(location.latitude, location.longitude,
         kVisibilityRadius.toDouble(), kGeohashPrecision);
     final placeholders = List.generate(hashes.length, (index) => "?").join(",");
     final rows = await database.query(
@@ -438,7 +454,7 @@ class OsmDataHelper extends ChangeNotifier {
   Future<List<String>> getPostcodesAround(LatLng location,
       {int limit = 3}) async {
     final database = await _ref.read(databaseProvider).database;
-    final hashes = createGeohashes(location.latitude, location.longitude,
+    final hashes = geohash.forCircle(location.latitude, location.longitude,
         kVisibilityRadius.toDouble(), kGeohashPrecision);
     final placeholders = List.generate(hashes.length, (index) => "?").join(",");
     final rows = await database.query(
@@ -467,7 +483,7 @@ class OsmDataHelper extends ChangeNotifier {
 
   Future<Set<String>> getCardPaymentOptions(LatLng location) async {
     final database = await _ref.read(databaseProvider).database;
-    final hashes = createGeohashes(location.latitude, location.longitude,
+    final hashes = geohash.forCircle(location.latitude, location.longitude,
         kVisibilityRadius.toDouble(), kGeohashPrecision);
     final placeholders = List.generate(hashes.length, (index) => "?").join(",");
     final rows = await database.query(
@@ -511,7 +527,7 @@ class OsmDataHelper extends ChangeNotifier {
     final database = await _ref.read(databaseProvider).database;
     final List<String> hashes = location == null
         ? const []
-        : createGeohashes(location.latitude, location.longitude,
+        : geohash.forCircle(location.latitude, location.longitude,
             kBigRadius.toDouble(), kGeohashPrecision);
     final placeholders = List.generate(hashes.length, (index) => "?").join(",");
     final rows = await database.query(
@@ -554,7 +570,7 @@ class OsmDataHelper extends ChangeNotifier {
     if (mainKey == null) return null;
 
     final database = await _ref.read(databaseProvider).database;
-    final hashes = createGeohashes(
+    final hashes = geohash.forCircle(
         amenity.location.latitude,
         amenity.location.longitude,
         kDuplicateSearchRadius.toDouble(),

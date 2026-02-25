@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/helpers/tags/element_kind.dart';
 import 'package:every_door/helpers/tile_caches.dart';
 import 'package:every_door/models/imagery.dart';
@@ -8,13 +11,19 @@ import 'package:every_door/models/imagery/tms.dart';
 import 'package:every_door/models/imagery/vector.dart';
 import 'package:every_door/models/imagery/wms.dart';
 import 'package:every_door/models/plugin.dart';
+import 'package:every_door/plugins/every_door_plugin.dart';
+import 'package:every_door/plugins/interface.dart';
 import 'package:every_door/providers/add_presets.dart';
+import 'package:every_door/providers/auth.dart';
 import 'package:every_door/providers/cur_imagery.dart';
+import 'package:every_door/providers/editor_buttons.dart';
 import 'package:every_door/providers/editor_mode.dart';
+import 'package:every_door/providers/events.dart';
 import 'package:every_door/providers/imagery.dart';
 import 'package:every_door/providers/overlays.dart';
 import 'package:every_door/providers/plugin_repo.dart';
 import 'package:every_door/providers/shared_file.dart';
+import 'package:every_door/providers/shared_preferences.dart';
 import 'package:every_door/screens/modes/definitions/base.dart';
 import 'package:every_door/screens/modes/definitions/entrances.dart';
 import 'package:every_door/screens/modes/definitions/micro.dart';
@@ -22,18 +31,17 @@ import 'package:flutter_map_geojson2/flutter_map_geojson2.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:mbtiles/mbtiles.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 final pluginManagerProvider =
-    NotifierProvider<PluginManager, List<Plugin>>(PluginManager.new);
+    NotifierProvider<PluginManager, Set<String>>(PluginManager.new);
 
-class PluginManager extends Notifier<List<Plugin>> {
+class PluginManager extends Notifier<Set<String>> {
   static final _logger = Logger('PluginManager');
 
   static const _kEnabledKey = 'plugins_enabled';
 
   @override
-  List<Plugin> build() {
+  Set<String> build() {
     ref.listen(pluginRepositoryProvider, (old, list) async {
       if (old == null || old.isEmpty) {
         await loadStateAndEnable();
@@ -42,18 +50,19 @@ class PluginManager extends Notifier<List<Plugin>> {
 
       // When plugins are removed, we need to disable them.
       for (final p in old) {
-        if (!list.contains(p)) _disable(p);
+        if (!list.contains(p)) await _disable(p);
       }
+      // TODO: how does it work? looks like we'll be enabling plugin after plugin on load.
       for (final p in list) {
         if (!old.contains(p)) await _enable(p);
       }
     });
-    return [];
+    return {};
   }
 
   Future<void> loadStateAndEnable() async {
     // Read enabled list.
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = ref.read(sharedPrefsProvider).requireValue;
     final enabledList = prefs.getStringList(_kEnabledKey);
     if (enabledList == null) return;
 
@@ -63,6 +72,7 @@ class PluginManager extends Notifier<List<Plugin>> {
 
     // Enable plugins.
     for (final plugin in enabledPlugins) {
+      // This modifies the state.
       await _enable(plugin, true);
     }
 
@@ -71,17 +81,38 @@ class PluginManager extends Notifier<List<Plugin>> {
     ref.read(sharedFileProvider).checkInitialMedia();
   }
 
+  /// Reloads a plugin. After plugin settings are changed, it needs
+  /// to be reloaded, because settings are most likely used in its
+  /// "install()" method.
+  Future<void> reloadPlugin(Plugin plugin) async {
+    if (plugin.active) {
+      // For now we just disable and enable it.
+      await _disable(plugin);
+      await _enable(plugin);
+    }
+  }
+
+  EveryDoorApp createContext(Plugin plugin, Function() onRepaint) =>
+      EveryDoorApp(plugin: plugin, ref: ref, onRepaint: onRepaint);
+
+  List<Plugin> _getActivePlugins() => ref
+      .read(pluginRepositoryProvider)
+      .where((p) => state.contains(p.id))
+      .toList();
+
   Future<void> _saveEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    final enabledList = state.map((p) => p.id).toList();
+    final prefs = ref.read(sharedPrefsProvider).requireValue;
+    final enabledList = state.toList();
     enabledList.sort();
     _logger.info('Saving enabled plugins: $enabledList');
     await prefs.setStringList(_kEnabledKey, enabledList);
   }
 
   Future<void> _enable(Plugin plugin, [bool force = false]) async {
-    if (!force && state.contains(plugin)) return;
+    if (plugin.active) return;
+    if (!force && state.contains(plugin.id)) return;
     if (!(plugin.apiVersion?.matches(kApiVersion) ?? true)) return;
+    plugin.active = true;
 
     try {
       _enableElementKinds(plugin);
@@ -89,35 +120,62 @@ class PluginManager extends Notifier<List<Plugin>> {
       _enableFields(plugin);
       _enablePresets(plugin);
       await _enableImagery(plugin);
+
+      EveryDoorPlugin? instance = await plugin.instantiate();
+      if (instance != null) {
+        plugin.instance = instance;
+        await instance.install(EveryDoorApp(plugin: plugin, ref: ref));
+        _logger.info('Installed');
+        ref.read(editorModeProvider.notifier).initializeFromPlugin(plugin.id);
+        _logger.info('Modes initialized');
+      }
     } catch (e) {
       // Installation failed, revert.
-      _technicallyDisable(plugin);
+      plugin.active = false;
+      await _technicallyDisable(plugin);
       rethrow;
     }
-    plugin.active = true;
-    // TODO: use the data from the plugin
-    state = state.followedBy([plugin]).toList();
+    state = state.union({plugin.id});
   }
 
-  void _technicallyDisable(Plugin plugin) {
-    _disableElementKinds(plugin);
-    _disableModes(plugin);
-    _disablePresets(plugin);
-    _disableFields(plugin);
-    _disableImagery(plugin);
+  Future<void> _technicallyDisable(Plugin plugin) async {
+    ref.read(eventsProvider.notifier).removePluginEvents(plugin.id);
+    ref.read(overlayImageryProvider.notifier).removePluginLayers(plugin.id);
+    ref.read(editorButtonsProvider.notifier).removeFor(plugin.id);
+    // TODO: restore modes and their states gracefully.
+    try {
+      _disableElementKinds(plugin);
+      await _disableModes(plugin);
+      _disablePresets(plugin);
+      _disableFields(plugin);
+      _disableImagery(plugin);
+    } catch (e) {
+      _logger.warning('Failed to de-initialize static plugin ${plugin.id}');
+    }
+
+    if (plugin.instance != null) {
+      try {
+        ref.read(authProvider.notifier).removePrefixed('${plugin.id}#');
+        await plugin.instance
+            ?.uninstall(EveryDoorApp(plugin: plugin, ref: ref));
+      } catch (e) {
+        _logger.warning('Plugin ${plugin.id} failed when uninstalling: $e');
+      } finally {
+        plugin.instance = null;
+      }
+    }
   }
 
-  void _disable(Plugin plugin) {
-    if (!state.contains(plugin)) return;
-    _technicallyDisable(plugin);
+  Future<void> _disable(Plugin plugin) async {
+    if (!state.contains(plugin.id) || !plugin.active) return;
     plugin.active = false;
-    // TODO: clear the data from the plugin
-    state = state.where((p) => p.id != plugin.id).toList();
+    await _technicallyDisable(plugin);
+    state = state.difference({plugin.id});
   }
 
   Future<void> setStateAndSave(Plugin id, bool active) async {
     if (!active) {
-      _disable(id);
+      await _disable(id);
     } else {
       await _enable(id);
     }
@@ -149,7 +207,7 @@ class PluginManager extends Notifier<List<Plugin>> {
     if (overlayData != null && overlayData is List) {
       for (final entry in overlayData.asMap().entries) {
         if (entry.value is! Map<String, dynamic>) continue;
-        final key = 'plugin_${plugin.id}_${entry.key}';
+        final key = entry.key.toString();
         final imagery = await _imageryFromMap(key, entry.value, plugin);
         if (imagery != null) {
           Set<String>? modes;
@@ -161,7 +219,7 @@ class PluginManager extends Notifier<List<Plugin>> {
 
           ref
               .read(overlayImageryProvider.notifier)
-              .addLayer(key, imagery, modes);
+              .addLayer(key, imagery, modes: modes, pluginId: plugin.id);
         }
       }
     }
@@ -260,9 +318,7 @@ class PluginManager extends Notifier<List<Plugin>> {
 
     final overlayData = plugin.data['overlays'];
     if (overlayData != null) {
-      ref
-          .read(overlayImageryProvider.notifier)
-          .removeLayers('plugin_${plugin.id}_');
+      ref.read(overlayImageryProvider.notifier).removePluginLayers(plugin.id);
     }
   }
 
@@ -270,7 +326,15 @@ class PluginManager extends Notifier<List<Plugin>> {
     final kindsData = plugin.data['kinds'];
     if (kindsData == null || kindsData is! Map) return;
     for (final entry in kindsData.entries) {
-      final kind = ElementKindImpl.fromJson(entry.key, entry.value);
+      ElementKindImpl kind;
+      if (entry.value is Map) {
+        kind = ElementKindImpl.fromJson(entry.key, entry.value);
+      } else if (entry.value is List) {
+        kind = ElementKindImpl.fromList(entry.key, entry.value);
+      } else {
+        throw ArgumentError(
+            'An element kind definition for ${entry.key} should be either a map or a list.');
+      }
       ElementKind.register(kind);
     }
   }
@@ -281,7 +345,7 @@ class PluginManager extends Notifier<List<Plugin>> {
 
     // We're just rebuilding the entire tree.
     ElementKind.reset();
-    for (final otherPlugin in state) {
+    for (final otherPlugin in _getActivePlugins()) {
       if (plugin.id != otherPlugin.id) {
         _enableElementKinds(otherPlugin);
       }
@@ -327,11 +391,13 @@ class PluginManager extends Notifier<List<Plugin>> {
     }
   }
 
-  void _disableModes(Plugin plugin) {
+  Future<void> _disableModes(Plugin plugin) async {
     final modeData = plugin.data['modes'];
-    if (modeData == null || modeData is! Map) return;
-    ref.read(editorModeProvider.notifier).reset();
-    for (final otherPlugin in state) {
+    if (plugin.instance == null && (modeData == null || modeData is! Map))
+      return;
+    // TODO: this removes mode alterations made by another plugins with code.
+    await ref.read(editorModeProvider.notifier).reset();
+    for (final otherPlugin in _getActivePlugins()) {
       if (plugin.id != otherPlugin.id) {
         _enableModes(otherPlugin);
       }
@@ -346,15 +412,10 @@ class PluginManager extends Notifier<List<Plugin>> {
       prov.addField(
           k, data, plugin, plugin.getLocalizationsBranch('fields.$k'));
     });
-    // TODO
   }
 
   void _disableFields(Plugin plugin) {
-    final fieldData = plugin.data['fields'];
-    if (fieldData == null || fieldData is! Map) return;
-    final prov = ref.read(pluginPresetsProvider);
-    for (final k in fieldData.keys) prov.removeField(k);
-    // TODO
+    ref.read(pluginPresetsProvider).removeFieldsForPlugin(plugin.id);
   }
 
   void _enablePresets(Plugin plugin) {

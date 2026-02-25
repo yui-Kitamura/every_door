@@ -227,9 +227,9 @@
   "@fieldAddressTap": {},
   "fieldPhoneWrong": "Неправильный формат номера",
   "@fieldPhoneWrong": {},
-  "messageNoData": "Данные не загружены, тыкните сюда для скачивания",
+  "messageNoData": "Данные не загружены, нажмите сюда для скачивания",
   "@messageNoData": {},
-  "messageDataObsolete": "Данные устарели, тыкните сюда для обновления",
+  "messageDataObsolete": "Данные устарели, нажмите сюда для обновления",
   "@messageDataObsolete": {},
   "enableGPS": "Включите GPS",
   "@enableGPS": {},
@@ -937,7 +937,7 @@
   "@pluginsDisable": {
     "description": "Button for deactivating a plugin."
   },
-  "pluginsDisabledHeader": "Отключить",
+  "pluginsDisabledHeader": "Отключены",
   "@pluginsDisabledHeader": {
     "description": "Header for the section listing deactivated, disabled plugins."
   },

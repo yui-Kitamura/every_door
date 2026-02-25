@@ -1,3 +1,9 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
+import 'package:eval_annotation/eval_annotation.dart';
+
+@Bind()
 class PluginVersion {
   late final int? _major;
   late final int _minor;
@@ -69,6 +75,7 @@ class PluginVersion {
   int get hashCode => Object.hash(_major, _minor);
 }
 
+@Bind()
 class PluginVersionRange {
   late final PluginVersion min;
   late final PluginVersion max;
@@ -81,6 +88,10 @@ class PluginVersionRange {
       final List versions = data.toList();
       min = PluginVersion(versions[0], false);
       max = PluginVersion(versions[1], false);
+    } else {
+      // Allow all for 1.x.
+      min = PluginVersion.zero;
+      max = PluginVersion('2.0');
     }
   }
 

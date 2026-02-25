@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'package:every_door/helpers/multi_icon.dart';
 import 'package:every_door/models/amenity.dart';
 import 'package:every_door/providers/cur_imagery.dart';
@@ -29,11 +32,21 @@ class _EntrancesPaneState extends ConsumerState<EntrancesPane> {
   final _controller = CustomMapController();
   final Map<String, GlobalKey> _globalKeys = {};
 
+  Iterable<OsmChange> get nearest => widget.def.nearest.whereType<OsmChange>();
+
   @override
   void initState() {
     super.initState();
     widget.def.addListener(onDefChange);
     updateNearest();
+  }
+
+  @override
+  void didUpdateWidget(covariant EntrancesPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Resubscribe, as per this method documentation.
+    oldWidget.def.removeListener(onDefChange);
+    widget.def.addListener(onDefChange);
   }
 
   @override
@@ -46,11 +59,13 @@ class _EntrancesPaneState extends ConsumerState<EntrancesPane> {
     if (mounted) setState(() {});
   }
 
-  Future<void> updateNearest() async {
-    await widget.def.updateNearest();
+  Future<void> updateNearest([LatLngBounds? bounds]) async {
+    bounds ??= ref.read(visibleBoundsProvider);
+    if (bounds == null) return;
+    await widget.def.updateNearest(bounds);
 
     // Prepare a map of global keys for [MultiHitMarkerLayer].
-    for (final e in widget.def.nearest) {
+    for (final e in nearest) {
       if (!_globalKeys.containsKey(e.databaseId)) {
         _globalKeys[e.databaseId] = GlobalKey();
       }
@@ -59,7 +74,7 @@ class _EntrancesPaneState extends ConsumerState<EntrancesPane> {
 
   OsmChange? findByKey(Key key) {
     if (key is! GlobalKey) return null;
-    for (final e in widget.def.nearest) {
+    for (final e in nearest) {
       if (_globalKeys[e.databaseId] == key) return e;
     }
     return null;
@@ -108,8 +123,8 @@ class _EntrancesPaneState extends ConsumerState<EntrancesPane> {
     ref.listen(needMapUpdateProvider, (_, next) {
       updateNearest();
     });
-    ref.listen(effectiveLocationProvider, (_, LatLng next) {
-      updateNearest();
+    ref.listen(visibleBoundsProvider, (_, next) {
+      updateNearest(next);
     });
 
     return Column(
@@ -123,10 +138,11 @@ class _EntrancesPaneState extends ConsumerState<EntrancesPane> {
               updateState: true,
               hasFloatingButton: primaryButton != null,
               layers: [
+                ...widget.def.overlays.map((i) => i.buildLayer()),
                 ...widget.def.mapLayers(),
                 MultiHitMarkerLayer(
                   markers: [
-                    for (final element in widget.def.nearest)
+                    for (final element in nearest)
                       widget.def.buildMarker(element)?.buildMarker(
                             key: _globalKeys[element.databaseId],
                             point: element.location,
@@ -149,6 +165,7 @@ class _EntrancesPaneState extends ConsumerState<EntrancesPane> {
                     ],
                   ),
               ],
+              buttons: widget.def.buttons.toList(),
             ),
             if (primaryButton != null)
               DraggableEditButton(

@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 const kCommonKeys = <String>{
   'building', 'source', 'highway', 'addr:housenumber', 'addr:street',
   'addr:city', 'name', 'addr:postcode', 'natural', 'surface', 'landuse',
@@ -1081,6 +1084,6 @@ const kCommonKeys = <String>{
   'parking:lane:left:perpendicular', 'note:2',
   'sanitary_dump_station:round_drain', 'lcd', 'area_lcd', 'entrance:steps',
   'roof:ridge:direction', 'building:name', 'whc:criteria', 'hut',
-  'animal_boarding', 'water_characteristic',
-  'destination:symbol:lanes:backward', 'ref:RS:kucni_broj',
+  'animal_boarding', 'water_characteristic', 'airside',
+  'destination:symbol:lanes:backward', 'ref:RS:kucni_broj', 'website:menu',
 };

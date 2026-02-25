@@ -1,7 +1,11 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:io';
 
 import 'package:adaptive_dialog/adaptive_dialog.dart';
 import 'package:every_door/constants.dart';
+import 'package:every_door/helpers/multi_icon.dart';
 import 'package:every_door/helpers/tags/element_kind.dart';
 import 'package:every_door/models/amenity.dart';
 import 'package:every_door/models/note.dart';
@@ -16,7 +20,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
+import 'package:every_door/generated/l10n/app_localizations.dart'
+    show AppLocalizations;
 
 class ChangeListPage extends ConsumerStatefulWidget {
   const ChangeListPage({super.key});
@@ -29,7 +34,7 @@ class ChangeItem {
   final OsmChange? change;
   final OsmNote? note;
   final bool allMapNotes;
-  final IconData icon;
+  final MultiIcon icon;
   final String title;
 
   const ChangeItem(
@@ -114,24 +119,27 @@ class _ChangeListPageState extends ConsumerState {
 
     final items = changesList.map((c) => ChangeItem(
           change: c,
-          icon:
-              ElementKind.matchChange(c).icon?.fontIcon ?? Icons.question_mark,
+          icon: ElementKind.matchChange(c).icon ??
+              MultiIcon(fontIcon: Icons.question_mark),
           title: c.typeAndName,
         ));
 
-    final notes = ref.read(notesProvider);
+    final notes = ref.read(notesProvider.notifier);
     final noteList = await notes.fetchChanges();
     final noteItems = <ChangeItem>[];
     if (noteList.whereType<MapNote>().isNotEmpty ||
         noteList.whereType<MapDrawing>().isNotEmpty) {
       noteItems.add(ChangeItem(
-          allMapNotes: true, icon: Icons.draw, title: loc.changesMapNotes));
+          allMapNotes: true,
+          icon: MultiIcon(fontIcon: Icons.draw),
+          title: loc.changesMapNotes));
     }
     noteItems.addAll(noteList.whereType<OsmNote>().map((n) => ChangeItem(
         note: n,
-        icon: n.deleting
-            ? Icons.speaker_notes_off_outlined
-            : Icons.speaker_notes_outlined,
+        icon: MultiIcon(
+            fontIcon: n.isDeleted
+                ? Icons.speaker_notes_off_outlined
+                : Icons.speaker_notes_outlined),
         title: loc.changesOsmNote +
             (n.message != null ? ': ' + n.getNoteTitle()! : ''))));
 
@@ -144,7 +152,7 @@ class _ChangeListPageState extends ConsumerState {
     final loc = AppLocalizations.of(context)!;
     final change = _changeList[index];
     final chProvider = ref.read(changesProvider);
-    final nProvider = ref.read(notesProvider);
+    final nProvider = ref.read(notesProvider.notifier);
     if (change.change != null) {
       chProvider.deleteChange(change.change!);
       ref.read(needMapUpdateProvider).trigger();
@@ -161,17 +169,16 @@ class _ChangeListPageState extends ConsumerState {
       action: change.change == null && change.note == null
           ? null
           : SnackBarAction(
-        label: loc.changesDeletedUndo.toUpperCase(),
-        onPressed: () async {
-          if (change.change != null) {
-            await chProvider.saveChange(change.change!);
-          } else if (change.note != null) {
-            await nProvider.clearChanges(
-                note: change.note!);
-          }
-          buildChangesList();
-        },
-      ),
+              label: loc.changesDeletedUndo.toUpperCase(),
+              onPressed: () async {
+                if (change.change != null) {
+                  await chProvider.saveChange(change.change!);
+                } else if (change.note != null) {
+                  await nProvider.clearChanges(note: change.note!);
+                }
+                buildChangesList();
+              },
+            ),
     ));
   }
 
@@ -242,8 +249,7 @@ class _ChangeListPageState extends ConsumerState {
                   final change = _changeList[index];
                   return ListTile(
                     title: Text(change.title),
-                    subtitle:
-                        Text(change.change?.error ?? loc.changesPending),
+                    subtitle: Text(change.change?.error ?? loc.changesPending),
                     trailing: IconButton(
                       icon: Icon(Icons.delete),
                       color: Colors.red,

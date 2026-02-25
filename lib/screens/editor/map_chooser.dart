@@ -1,3 +1,6 @@
+// Copyright 2022-2025 Ilya Zverev
+// This file is a part of Every Door, distributed under GPL v3 or later version.
+// Refer to LICENSE file and https://www.gnu.org/licenses/gpl-3.0.html for details.
 import 'dart:async';
 
 import 'package:every_door/constants.dart';
@@ -22,8 +25,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:every_door/generated/l10n/app_localizations.dart' show AppLocalizations;
+import 'package:eval_annotation/eval_annotation.dart';
+import 'package:every_door/generated/l10n/app_localizations.dart'
+    show AppLocalizations;
 
+@Bind()
 class MapChooserPage extends ConsumerStatefulWidget {
   final LatLng? location;
   final bool creating;
@@ -76,7 +82,8 @@ class _MapChooserPageState extends ConsumerState<MapChooserPage> {
         await provider.getElements(location, kVisibilityRadius);
     // Filter for amenities (or not amenities).
     data = data.where((e) {
-      if (editorMode.isOurKind(e)) return true;
+      if (ElementKind.matchChange(e, editorMode.ourKinds) !=
+          ElementKind.unknown) return true;
       if (ElementKind.building.matchesChange(e)) return false;
       if (ElementKind.entrance.matchesChange(e)) return true;
       return e.isNew;
@@ -87,7 +94,7 @@ class _MapChooserPageState extends ConsumerState<MapChooserPage> {
     }
     // Fetch OSM notes as well.
     final notes = await ref
-        .read(notesProvider)
+        .read(notesProvider.notifier)
         .fetchAllNotes(center: location, radius: kNotesVisibilityRadius);
     // Update the map.
     setState(() {
@@ -138,13 +145,15 @@ class _MapChooserPageState extends ConsumerState<MapChooserPage> {
         ),
         children: [
           imagery.buildLayer(reset: true),
-          ...ref.watch(overlayImageryProvider),
+          ...ref
+              .watch(overlayImageryProvider)
+              .map((i) => i.buildLayer(reset: true)),
           AttributionWidget(imagery),
           PolylineLayer(
             polylines: [
               for (final drawing in nearestNotes
                   .whereType<MapDrawing>()
-                  .where((d) => !d.deleting))
+                  .where((d) => !d.isDeleted))
                 Polyline(
                   points: drawing.path.nodes,
                   color: drawing.style.color,
