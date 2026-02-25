@@ -1,16 +1,3 @@
-# about this branch
-
-This branch is a working branch for issue #991 (Japanese block-based address).  
-Planned actions are shown below:
-- create address fragments for block-based address
-  - change order province/city/neighbourhood/block_num/house_num
-  - disable addr:street
-  - i10n
-- upgrade input form
-  - optional postcode/county/suburb/quarter
-- activate the component via setting
-- activate via location (in Japan only auto)
-
 # Every Door
 
 The best mobile editor for adding shops and amenities to OpenStreetMap.
