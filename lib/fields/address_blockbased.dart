@@ -91,6 +91,7 @@ class _AddressBlockBasedInputState extends ConsumerState<AddressBlockBasedInput>
       housenumber: sa.housenumber,
       blockNumber: sa.blockNumber,
       city: sa.city,
+      province: sa.province,
       suburb: sa.city == null ? sa.place : null,
     ).withBase(widget.field.key);
   }

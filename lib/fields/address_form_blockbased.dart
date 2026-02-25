@@ -71,6 +71,8 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
     return result;
   }
 
+  List<BlockBasedAddress> _nearbyAddresses = [];
+
   Future<void> _updateNearbyAddressHints() async {
     final provider = ref.read(osmDataProvider);
     final addrs = await provider.getBlockBasedAddressesAround(
@@ -78,6 +80,7 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
       limit: 30,
     );
     setState(() {
+      _nearbyAddresses = addrs;
       nearestProvinces = _filterDuplicates(addrs.map((e) => e.province));
       nearestCities = _filterDuplicates(addrs.map((e) => e.city));
       nearestNeighbourhoods = _filterDuplicates(
@@ -187,6 +190,19 @@ class _AddressFormFieldBlockBasedState extends ConsumerState<AddressFormBlockBas
                       onChange: (value) {
                         if (value != null) {
                           controller.text = value;
+                          if (_provinceController.text.isEmpty) {
+                            final addr = _nearbyAddresses.firstWhere(
+                              (e) =>
+                                  e.city == value ||
+                                  e.neighbourhood == value ||
+                                  e.quarter == value ||
+                                  e.suburb == value,
+                              orElse: () => BlockBasedAddress.empty,
+                            );
+                            if (addr.province != null) {
+                              _provinceController.text = addr.province!;
+                            }
+                          }
                           notifyOnChange();
                         }
                       },

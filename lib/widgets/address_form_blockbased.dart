@@ -82,6 +82,8 @@ class _AddressFormBlockBasedState extends ConsumerState<AddressFormBlockBased> {
     return result;
   }
 
+  List<BlockBasedAddress> _nearbyAddresses = [];
+
   Future<void> _updateNearbyAddressHints() async {
     final provider = ref.read(osmDataProvider);
     final addrs = await provider.getBlockBasedAddressesAround(
@@ -89,6 +91,7 @@ class _AddressFormBlockBasedState extends ConsumerState<AddressFormBlockBased> {
       limit: 30,
     );
     setState(() {
+      _nearbyAddresses = addrs;
       nearestProvinces = _filterDuplicates(addrs.map((e) => e.province));
       nearestCities = _filterDuplicates(addrs.map((e) => e.city));
       nearestNeighbourhoods = _filterDuplicates(
@@ -164,6 +167,14 @@ class _AddressFormBlockBasedState extends ConsumerState<AddressFormBlockBased> {
       suburb: _getValue(_suburbController),
       quarter: _getValue(_quarterController),
     );
+
+    // If we have nearby addresses, try to fill province from the selected city/neighbourhood
+    if (address.province == null) {
+      final provider = ref.read(osmDataProvider);
+      // We don't want to await here to avoid lag, but maybe we can find it in already loaded addrs
+      // Actually, it's better to do it in onChange of RadioField
+    }
+
     widget.onChange(address);
     setState(() {});
   }
@@ -200,6 +211,19 @@ class _AddressFormBlockBasedState extends ConsumerState<AddressFormBlockBased> {
                           keyboardType: keyboardType, inputFormatters: inputFormatters);
                     } else if (value != null) {
                       controller.text = value;
+                      if (_provinceController.text.isEmpty) {
+                        final addr = _nearbyAddresses.firstWhere(
+                          (e) =>
+                              e.city == value ||
+                              e.neighbourhood == value ||
+                              e.quarter == value ||
+                              e.suburb == value,
+                          orElse: () => BlockBasedAddress.empty,
+                        );
+                        if (addr.province != null) {
+                          _provinceController.text = addr.province!;
+                        }
+                      }
                       notifyOnChange();
                     }
                   },
